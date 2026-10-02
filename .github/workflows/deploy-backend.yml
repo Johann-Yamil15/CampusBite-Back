@@ -1,0 +1,67 @@
+# JJ-Sprint1 02/10/2026: pipeline CI/CD que compila .NET 9 y despliega a Azure App Service al hacer push a main
+name: 🚀 Deploy Backend → Azure
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: "campusbite-back"
+  DOTNET_VERSION: "9.0.x"
+  PUBLISH_PATH: "./publish"
+
+jobs:
+  build:
+    name: 🔨 Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🟣 Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 📦 Restaurar dependencias
+        run: dotnet restore
+
+      - name: 🏗️ Compilar
+        run: dotnet build --configuration Release --no-restore
+
+      - name: 📦 Publicar
+        run: dotnet publish --configuration Release --no-build --output ${{ env.PUBLISH_PATH }}
+
+      - name: 📤 Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-publish
+          path: ${{ env.PUBLISH_PATH }}
+          retention-days: 1
+
+  deploy:
+    name: ☁️ Deploy a Azure
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: 📥 Descargar artefacto
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-publish
+          path: ${{ env.PUBLISH_PATH }}
+
+      - name: 🚀 Deploy a Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_BACK }}
+          package: ${{ env.PUBLISH_PATH }}
+
+      - name: ✅ Deploy completado
+        run: |
+          echo "🎉 Backend desplegado exitosamente"
+          echo "📋 Swagger: https://${{ env.AZURE_WEBAPP_NAME }}-dkeje8c0euefefat.centralus-01.azurewebsites.net/swagger"
