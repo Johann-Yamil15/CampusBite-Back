@@ -1,0 +1,28 @@
+@CampusBite_Back_HostAddress = http://localhost:5167
+@token = PEGAR_TOKEN_AQUI
+
+POST {{CampusBite_Back_HostAddress}}/api/auth/registro
+Content-Type: application/json
+
+{
+  "nombre": "Usuario Prueba",
+  "correo": "prueba@uttt.edu.mx",
+  "password": "Password123"
+}
+
+###
+
+POST {{CampusBite_Back_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "correo": "prueba@uttt.edu.mx",
+  "password": "Password123"
+}
+
+###
+
+GET {{CampusBite_Back_HostAddress}}/api/auth/me
+Authorization: Bearer {{token}}
+
+###
