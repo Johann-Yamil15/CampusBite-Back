@@ -1,0 +1,6 @@
+@CampusBite_Back_HostAddress = http://localhost:5167
+
+GET {{CampusBite_Back_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
