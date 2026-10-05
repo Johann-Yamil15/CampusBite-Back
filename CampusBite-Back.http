@@ -7,7 +7,9 @@ Content-Type: application/json
 {
   "nombre": "Usuario Prueba",
   "correo": "prueba@uttt.edu.mx",
-  "password": "Password123"
+  "password": "Password123",
+  "matricula": "UTT0000099",
+  "telefono": "7711234567"
 }
 
 ###
