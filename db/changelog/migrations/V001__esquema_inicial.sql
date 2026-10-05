@@ -2,7 +2,7 @@
 -- CampusBite · TEC-03 · Migración V001: esquema inicial
 -- Extensiones, tipos ENUM, tablas, restricciones, índices y catálogo de roles.
 -- Origen: campusbite_TEC-02.sql (PostgreSQL 14+). Se aplica en una sola
--- transacción desde migrate.sh (psql -1 -v ON_ERROR_STOP=1).
+-- transacción por Liquibase (ver changelog-master.xml).
 -- =====================================================================
 
 -- 0. Extensiones y tipos -----------------------------------------------

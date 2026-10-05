@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!--
+      CampusBite · CAMPUS-11 (TEC-03) · Changelog maestro de Liquibase.
+      Cada changeSet ejecuta un script SQL de PostgreSQL (definido en TEC-02) y
+      declara su rollback. Regla: NUNCA editar un changeSet ya aplicado; los
+      cambios nuevos van en un changeSet nuevo (V004, V005, ...).
+      splitStatements=false: el archivo se envía completo, para que los cuerpos
+      de funciones ($$ ... $$) no se partan por los puntos y coma.
+    -->
+
+    <changeSet id="V001-esquema-inicial" author="campusbite-db">
+        <comment>Extensión citext, ENUMs, 11 tablas, índices y catálogo de roles</comment>
+        <sqlFile path="migrations/V001__esquema_inicial.sql" relativeToChangelogFile="true"
+                 splitStatements="false" stripComments="false"/>
+        <rollback>
+            <sqlFile path="migrations/down/V001__esquema_inicial.down.sql" relativeToChangelogFile="true"
+                     splitStatements="false" stripComments="false"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="V002-logica-negocio" author="campusbite-db">
+        <comment>Triggers y procedimientos almacenados (sp_*)</comment>
+        <sqlFile path="migrations/V002__logica_negocio.sql" relativeToChangelogFile="true"
+                 splitStatements="false" stripComments="false"/>
+        <rollback>
+            <sqlFile path="migrations/down/V002__logica_negocio.down.sql" relativeToChangelogFile="true"
+                     splitStatements="false" stripComments="false"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="V003-vistas-y-seguridad" author="campusbite-db">
+        <comment>Vistas de consulta y permisos mínimos para app_backend</comment>
+        <sqlFile path="migrations/V003__vistas_y_seguridad.sql" relativeToChangelogFile="true"
+                 splitStatements="false" stripComments="false"/>
+        <rollback>
+            <sqlFile path="migrations/down/V003__vistas_y_seguridad.down.sql" relativeToChangelogFile="true"
+                     splitStatements="false" stripComments="false"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="V004-endurecimiento-seguridad" author="campusbite-db">
+        <comment>Permisos mínimos, límites del rol de la API, código de recogida seguro y lecturas con autorización</comment>
+        <sqlFile path="migrations/V004__endurecimiento_seguridad.sql" relativeToChangelogFile="true"
+                 splitStatements="false" stripComments="false"/>
+        <rollback>
+            <sqlFile path="migrations/down/V004__endurecimiento_seguridad.down.sql" relativeToChangelogFile="true"
+                     splitStatements="false" stripComments="false"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="V005-depuracion-indices" author="campusbite-db">
+        <comment>Elimina índices redundantes o sin uso comprobado</comment>
+        <sqlFile path="migrations/V005__depuracion_indices.sql" relativeToChangelogFile="true"
+                 splitStatements="false" stripComments="false"/>
+        <rollback>
+            <sqlFile path="migrations/down/V005__depuracion_indices.down.sql" relativeToChangelogFile="true"
+                     splitStatements="false" stripComments="false"/>
+        </rollback>
+    </changeSet>
+
+    <!-- Login de la API en desarrollo (mínimo privilegio también en local). SOLO contexto dev. -->
+    <changeSet id="dev-login-app-backend" author="campusbite-db" context="dev" runOnChange="true">
+        <comment>Habilita LOGIN para app_backend con clave de desarrollo</comment>
+        <sql>ALTER ROLE app_backend WITH LOGIN PASSWORD 'app_backend_dev'</sql>
+        <rollback><sql>ALTER ROLE app_backend WITH NOLOGIN PASSWORD NULL</sql></rollback>
+    </changeSet>
+
+    <!-- Datos de prueba: solo con el contexto "dev" (contexto dev). Nunca en producción. -->
+    <changeSet id="seed-dev-datos-prueba" author="campusbite-db" context="dev" runOnChange="true">
+        <comment>Usuarios, cafetería, horarios y menú de prueba (idempotente)</comment>
+        <sqlFile path="seeds/seed_dev.sql" relativeToChangelogFile="true"
+                 splitStatements="false" stripComments="false"/>
+        <rollback>
+            <sql>
+                DELETE FROM producto  WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
+                DELETE FROM categoria WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
+                DELETE FROM horario_cafeteria WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
+                DELETE FROM cafeteria WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
+                DELETE FROM usuario WHERE id_usuario IN ('00000000-0000-0000-0000-0000000000a1',
+                    '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3');
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

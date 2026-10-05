@@ -3,7 +3,7 @@
 -- Ejecutar UNA vez como superusuario (o rol con CREATEDB/CREATEROLE):
 --   psql -U postgres -f 00_crear_base_datos.sql
 -- En Supabase/Neon la base ya existe: omitir este archivo y usar solo
--- migrate.sh.
+-- Liquibase.
 -- =====================================================================
 
 -- Rol con el que se conectará el backend (mínimo privilegio).

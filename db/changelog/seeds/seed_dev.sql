@@ -4,8 +4,6 @@
 -- Los hashes son marcadores: no sirven para iniciar sesión. El backend
 -- debe generar hashes reales (bcrypt/argon2) al registrar usuarios.
 -- =====================================================================
-BEGIN;
-
 INSERT INTO usuario (id_usuario, id_rol, nombre, correo, contrasena_hash, matricula, telefono) VALUES
   ('00000000-0000-0000-0000-0000000000a1', 1, 'Alumno de Prueba',   'alumno@ejemplo.test',   'HASH_DE_PRUEBA_NO_VALIDO', 'UTT0000001', '7710000001'),
   ('00000000-0000-0000-0000-0000000000a2', 2, 'Encargado Cafetería','cafeteria@ejemplo.test','HASH_DE_PRUEBA_NO_VALIDO', NULL,         '7710000002'),
@@ -33,4 +31,3 @@ INSERT INTO producto (id_producto, id_cafeteria, id_categoria, nombre, descripci
   ('00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000d2', 'Café americano',     '12 oz',              25.00)
 ON CONFLICT DO NOTHING;
 
-COMMIT;
