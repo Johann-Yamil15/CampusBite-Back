@@ -2,7 +2,7 @@
 -- CampusBite · TEC-03 · Migración V002: lógica de negocio
 -- Triggers (auditoría, máquina de estados, historial, pagos) y procedimientos almacenados.
 -- Origen: campusbite_TEC-02.sql (PostgreSQL 14+). Se aplica en una sola
--- transacción desde migrate.sh (psql -1 -v ON_ERROR_STOP=1).
+-- transacción por Liquibase (ver changelog-master.xml).
 -- =====================================================================
 
 -- 3. Triggers ------------------------------------------------------------

@@ -2,7 +2,7 @@
 -- CampusBite · TEC-03 · Migración V003: vistas y seguridad
 -- Vistas de consulta y permisos mínimos para el rol app_backend.
 -- Origen: campusbite_TEC-02.sql (PostgreSQL 14+). Se aplica en una sola
--- transacción desde migrate.sh (psql -1 -v ON_ERROR_STOP=1).
+-- transacción por Liquibase (ver changelog-master.xml).
 -- =====================================================================
 
 -- 5. Vistas de consulta --------------------------------------------------

@@ -134,5 +134,82 @@ BEGIN
   RAISE NOTICE 'OK 11: app_backend sin acceso directo a tablas, con acceso a vistas';
 END $$;
 
+-- 12-16. Seguridad (V004) e índices (V005) -----------------------------------
+DO $$
+DECLARE
+  c_alumno UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_admin  UUID := '00000000-0000-0000-0000-0000000000a2';
+  c_cafe   UUID := '00000000-0000-0000-0000-0000000000c1';
+  c_p1     UUID := '00000000-0000-0000-0000-0000000000e1';
+  v_hora   TIMESTAMPTZ := (date_trunc('day', now() AT TIME ZONE 'America/Mexico_City') + interval '1 day 15 hours')
+                          AT TIME ZONE 'America/Mexico_City';
+  v_orden  UUID;
+  v_n      INT;
+  v_ok     BOOLEAN;
+BEGIN
+  -- 12. Límites del rol de la API
+  ASSERT (SELECT rolconnlimit FROM pg_roles WHERE rolname = 'app_backend') = 50, 'app_backend debe tener límite de conexiones';
+  ASSERT (SELECT bool_or(c LIKE 'statement_timeout=%') FROM pg_roles r, unnest(r.rolconfig) c WHERE r.rolname = 'app_backend'),
+         'app_backend debe tener statement_timeout';
+  RAISE NOTICE 'OK 12: límites de conexión y tiempo para app_backend';
+
+  -- 13. La API lee con autorización: sin acceso a las vistas por persona
+  SET LOCAL ROLE app_backend;
+  v_orden := sp_crear_orden(c_alumno, c_cafe, v_hora, 'efectivo',
+               jsonb_build_array(jsonb_build_object('id_producto', c_p1, 'cantidad', 1)));
+  v_ok := false;
+  BEGIN PERFORM 1 FROM vw_mis_ordenes LIMIT 1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'app_backend no debe leer vw_mis_ordenes directamente';
+  v_ok := false;
+  BEGIN PERFORM 1 FROM vw_cola_cafeteria LIMIT 1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'app_backend no debe leer vw_cola_cafeteria directamente';
+  SELECT count(*) INTO v_n FROM sp_mis_ordenes(c_alumno);
+  ASSERT v_n >= 1, 'sp_mis_ordenes debe devolver las órdenes del alumno';
+  ASSERT NOT EXISTS (SELECT 1 FROM sp_mis_ordenes(c_alumno) WHERE id_usuario <> c_alumno), 'sp_mis_ordenes no debe mezclar usuarios';
+  ASSERT (SELECT count(*) FROM sp_mis_ordenes(c_admin)) = 0, 'otro usuario no ve órdenes ajenas';
+  RESET ROLE;
+  RAISE NOTICE 'OK 13: vistas por persona cerradas; sp_mis_ordenes filtra por dueño';
+
+  -- 14. Cola de la cafetería: solo su administrador (o el admin del sistema)
+  SET LOCAL ROLE app_backend;
+  v_ok := false;
+  BEGIN PERFORM * FROM sp_cola_cafeteria(c_cafe, c_alumno);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Un alumno no debe ver la cola de la cafetería';
+  SELECT count(*) INTO v_n FROM sp_cola_cafeteria(c_cafe, c_admin);
+  ASSERT v_n >= 1, 'El encargado debe ver la cola con la orden nueva';
+  RESET ROLE;
+  RAISE NOTICE 'OK 14: sp_cola_cafeteria autoriza dentro de la base de datos';
+
+  -- 15. Un rol cualquiera no puede ejecutar procedimientos, leer vistas ni crear objetos
+  CREATE ROLE intruso NOLOGIN;
+  SET LOCAL ROLE intruso;
+  v_ok := false;
+  BEGIN PERFORM sp_registrar_usuario('X Y', 'x@y.test', 'h');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'PUBLIC no debe ejecutar procedimientos';
+  v_ok := false;
+  BEGIN PERFORM 1 FROM vw_menu_cafeteria LIMIT 1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'PUBLIC no debe leer vistas';
+  v_ok := false;
+  BEGIN EXECUTE 'CREATE TABLE public.trampa (id int)';
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'PUBLIC no debe crear objetos en el esquema public';
+  RESET ROLE;
+  RAISE NOTICE 'OK 15: un rol ajeno no ejecuta, lee ni crea nada';
+
+  -- 16. Índices: sobrantes eliminados, útiles presentes
+  ASSERT NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
+    ('idx_horario_cafeteria_dia','idx_usuario_rol','idx_cafeteria_activa','idx_cafeteria_admin','idx_producto_categoria')),
+    'Los índices depurados no deben existir';
+  ASSERT (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
+    ('idx_orden_usuario_fecha','idx_orden_cola_cafeteria','idx_producto_cafeteria','idx_historial_orden_fecha',
+     'idx_detalle_producto','idx_push_usuario')) = 6, 'Faltan índices que sí se usan';
+  RAISE NOTICE 'OK 16: índices depurados y los 6 útiles presentes';
+END $$;
+
 ROLLBACK;
 \echo '>>> SMOKE TEST COMPLETO: todo OK (transacción revertida)'

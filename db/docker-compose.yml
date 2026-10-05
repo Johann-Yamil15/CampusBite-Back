@@ -1,0 +1,45 @@
+# CampusBite · PostgreSQL en contenedor + Liquibase
+#   docker compose up -d db            -> solo la base de datos
+#   docker compose run --rm liquibase  -> aplica las migraciones pendientes
+#   docker compose down -v             -> borra contenedores Y datos (volumen)
+name: campusbite
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: campusbite-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-campusbite}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en db/.env}
+      TZ: UTC
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - campusbite_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-campusbite}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  liquibase:
+    image: liquibase/liquibase:4.29.2
+    profiles: ["tools"]          # no arranca con "up"; se invoca con "run"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./changelog:/liquibase/changelog:ro
+    command:
+      - --search-path=/liquibase/changelog
+      - --changelog-file=changelog-master.xml
+      - --url=jdbc:postgresql://db:5432/${DB_NAME:-campusbite}
+      - --username=${DB_USER:-postgres}
+      - --password=${DB_PASSWORD}
+      - --contexts=${LIQUIBASE_CONTEXTS:-dev}
+      - update
+
+volumes:
+  campusbite_pgdata:
