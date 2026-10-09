@@ -45,6 +45,20 @@ Un solo archivo \`.sql\` con todo el esquema de CampusBite, el login de desarrol
 de prueba, para levantar la base en local **sin Docker ni Liquibase**. Producción no usa este archivo: se migra
 con Liquibase desde \`db/changelog\` (ver \`db/README.md\`).
 
+## Generar la versión del script (manual, cuando se ocupe)
+
+El script **no se ejecuta solo**: genera una versión únicamente cuando alguien corre estos comandos.
+En **Git Bash** (Windows) o en la terminal (Linux/macOS):
+
+\`\`\`bash
+cd db/consolidado
+chmod +x build_schema.sh      # solo la primera vez (da permiso de ejecución)
+./build_schema.sh             # genera V$PREFIJO.NNN si cambió algún script; si no, responde "Sin cambios"
+\`\`\`
+
+No lleva nombre de módulo: toda la base se arma con un solo \`orden.txt\`. Si cambió algo, aparece el archivo nuevo
+en \`versiones/\` y se actualizan \`historial.txt\` y este README.
+
 ## Comandos rápidos
 
 Desde la **raíz del repo**, en **Git Bash** (Windows) o en la terminal (Linux/macOS):
