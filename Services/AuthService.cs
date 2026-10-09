@@ -14,17 +14,19 @@ public class AuthService : IAuthService
 {
     private readonly AppDbContext _context;
     private readonly ITokenService _tokenService;
+    private readonly IPasswordHasher _passwordHasher;
 
-    public AuthService(AppDbContext context, ITokenService tokenService)
+    public AuthService(AppDbContext context, ITokenService tokenService, IPasswordHasher passwordHasher)
     {
         _context = context;
         _tokenService = tokenService;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task<AuthResponseDto> RegistrarAsync(RegistroRequestDto dto)
     {
         var correo = dto.Correo.Trim().ToLowerInvariant();
-        var hash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+        var hash = _passwordHasher.Hash(dto.Password);
         var matricula = string.IsNullOrWhiteSpace(dto.Matricula) ? null : dto.Matricula.Trim();
         var telefono = string.IsNullOrWhiteSpace(dto.Telefono) ? null : dto.Telefono.Trim();
 
@@ -62,25 +64,15 @@ public class AuthService : IAuthService
                 """)
             .SingleOrDefaultAsync();
 
-        if (credenciales is null || !credenciales.Activo || !VerificarPassword(dto.Password, credenciales.ContrasenaHash))
+        // JJ-Sprint2 09/10/2026: se verifica siempre (aunque el correo no exista) para no revelar por tiempo qué correos están registrados
+        var passwordValida = _passwordHasher.Verify(dto.Password, credenciales?.ContrasenaHash);
+
+        if (credenciales is null || !credenciales.Activo || !passwordValida)
         {
             throw ApiException.Unauthorized("Correo o contraseña incorrectos.");
         }
 
         return CrearRespuesta(credenciales.IdUsuario, correo, credenciales.IdRol);
-    }
-
-    // JJ-Sprint1 04/10/2026: un hash con formato inválido (p. ej. los del seed) se trata como contraseña incorrecta
-    private static bool VerificarPassword(string password, string hash)
-    {
-        try
-        {
-            return BCrypt.Net.BCrypt.Verify(password, hash);
-        }
-        catch (BCrypt.Net.SaltParseException)
-        {
-            return false;
-        }
     }
 
     private AuthResponseDto CrearRespuesta(Guid idUsuario, string correo, RolUsuario rol)

@@ -1,17 +1,19 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Text;
 using CampusBite_Back.Common.Settings;
 using CampusBite_Back.Interfaces;
 using CampusBite_Back.Models.Enums;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CampusBite_Back.Services;
 
-// JJ-Sprint1 04/10/2026: genera el JWT firmado con id (UUID), correo y rol del usuario
+// JJ-Sprint2 09/10/2026: genera el JWT con claims cortos (sub, email, role) que el front puede leer directo
 public class TokenService : ITokenService
 {
+    // Nombre del claim de rol dentro del token; el front lo usa en sus guards de ruta
+    public const string ClaimRol = "role";
+
     private readonly JwtSettings _jwt;
 
     public TokenService(IOptions<JwtSettings> jwt)
@@ -21,25 +23,27 @@ public class TokenService : ITokenService
 
     public (string Token, DateTime ExpiraEn) GenerarToken(Guid idUsuario, string correo, RolUsuario rol)
     {
-        var claims = new[]
+        var ahora = DateTime.UtcNow;
+        var expiraEn = ahora.AddMinutes(_jwt.ExpirationMinutes);
+
+        var descriptor = new SecurityTokenDescriptor
         {
-            new Claim(JwtRegisteredClaimNames.Sub, idUsuario.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(ClaimTypes.NameIdentifier, idUsuario.ToString()),
-            new Claim(ClaimTypes.Email, correo),
-            new Claim(ClaimTypes.Role, rol.ToString())
+            Issuer = _jwt.Issuer,
+            Audience = _jwt.Audience,
+            IssuedAt = ahora,
+            NotBefore = ahora,
+            Expires = expiraEn,
+            Claims = new Dictionary<string, object>
+            {
+                [JwtRegisteredClaimNames.Sub] = idUsuario.ToString(),
+                [JwtRegisteredClaimNames.Email] = correo,
+                [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
+                [ClaimRol] = rol.ToString()
+            },
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key)), SecurityAlgorithms.HmacSha256)
         };
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key));
-        var expiraEn = DateTime.UtcNow.AddMinutes(_jwt.ExpirationMinutes);
-
-        var token = new JwtSecurityToken(
-            issuer: _jwt.Issuer,
-            audience: _jwt.Audience,
-            claims: claims,
-            expires: expiraEn,
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
-
-        return (new JwtSecurityTokenHandler().WriteToken(token), expiraEn);
+        return (new JsonWebTokenHandler().CreateToken(descriptor), expiraEn);
     }
 }
