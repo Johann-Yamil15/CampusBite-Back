@@ -92,6 +92,43 @@ Lo que no aparece aquí (por ejemplo, el CRUD de cafeterías y productos, el per
 7. Para errores de negocio lanza `ApiException.NotFound("...")`, etc. El middleware arma la respuesta.
 8. Para proteger un endpoint usa `[Authorize]` o `[Authorize(Roles = "AdminSistema")]` (roles: `Alumno`, `AdminCafeteria`, `AdminSistema`).
 
+## API de autenticación
+Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato ProblemDetails
+(`status`, `title`, `detail` y, en errores de validación, `errors` con un mensaje por campo).
+
+| Método y ruta | Auth | Cuerpo | Respuestas |
+|---|---|---|---|
+| `POST /api/auth/registro` | No | `nombre`, `correo`, `password`, `matricula?`, `telefono?` | 201 · 400 · 409 · 429 |
+| `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 429 |
+| `GET /api/auth/me` | Bearer | — | 200 · 401 |
+
+**Registro**: crea siempre un `Alumno` y ya devuelve el token, así que el front puede entrar directo sin pedir login.
+
+```json
+// POST /api/auth/registro
+{ "nombre": "Ana López", "correo": "ana@uttt.edu.mx", "password": "Password123",
+  "matricula": "23300099", "telefono": "7711234567" }
+```
+
+**Respuesta de registro (201) y login (200)**:
+
+```json
+{ "usuarioId": "1ffc232e-0d4d-4206-9362-87a949b4342a", "correo": "ana@uttt.edu.mx",
+  "rol": "Alumno", "token": "eyJhbGciOi...", "expiraEn": "2026-10-09T19:13:03Z" }
+```
+
+**`/me` (200)**: `{ "id": "...", "correo": "...", "rol": "Alumno" }`.
+
+| Código | Cuándo | Qué mostrar en el front |
+|---|---|---|
+| 400 | Datos inválidos | El mensaje de cada campo en `errors` (ya vienen en español) |
+| 401 | Login: correo o contraseña incorrectos · `/me`: sin token o token vencido | Login: el `detail`. Ruta protegida: mandar al login |
+| 409 | Correo o matrícula ya registrados | El `detail` |
+| 429 | Demasiados intentos desde la misma IP (20 por minuto por defecto) | El `detail`; el encabezado `Retry-After` indica los segundos de espera |
+
+Reglas de registro: nombre de 2 a 80 caracteres, correo válido de máximo 120, contraseña de 8 a 72,
+matrícula de máximo 20 y teléfono de 10 a 15 dígitos (los dos últimos son opcionales).
+
 ## Variables de entorno
 Los secretos **no** van en `appsettings.json`. Se leen del archivo `.env` (local) o de las variables de entorno del servidor.
 
@@ -107,6 +144,7 @@ cp .env.example .env   # y llenar los valores reales
 | `Jwt__ExpirationMinutes` | Duración del token |
 | `Cors__AllowedOrigins` | Orígenes del front separados por coma (vacío = cualquiera) |
 | `Swagger__Enabled` | Muestra Swagger fuera de Development |
+| `RateLimit__AuthPermitLimit` / `RateLimit__AuthWindowSeconds` | Intentos de login/registro por IP y ventana en segundos (opcional; 20 por 60 s) |
 
 ## Ejecutar
 

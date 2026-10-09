@@ -1,9 +1,12 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using CampusBite_Back.Common.Settings;
 using CampusBite_Back.Data;
 using CampusBite_Back.Interfaces;
 using CampusBite_Back.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -132,6 +135,54 @@ public static class ServiceCollectionExtensions
                     Array.Empty<string>()
                 }
             });
+        });
+
+        return services;
+    }
+
+    // JJ-Sprint2 09/10/2026: limita intentos de login/registro por IP (fuerza bruta) y responde 429 con ProblemDetails
+    public static IServiceCollection AddAuthRateLimiting(this IServiceCollection services, IConfiguration configuration)
+    {
+        var limites = configuration.GetSection(RateLimitSettings.SectionName).Get<RateLimitSettings>() ?? new RateLimitSettings();
+
+        // En Azure la IP real del cliente llega en X-Forwarded-For; se toma solo la última entrada (la que agrega Azure)
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = 1;
+            options.KnownNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
+
+        services.AddRateLimiter(options =>
+        {
+            options.AddPolicy(RateLimitSettings.PoliticaAuth, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    httpContext.Connection.RemoteIpAddress?.ToString() ?? "desconocida",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = limites.AuthPermitLimit,
+                        Window = TimeSpan.FromSeconds(limites.AuthWindowSeconds),
+                        QueueLimit = 0
+                    }));
+
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                var response = context.HttpContext.Response;
+                response.StatusCode = StatusCodes.Status429TooManyRequests;
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+                }
+
+                await response.WriteAsJsonAsync(new ProblemDetails
+                {
+                    Status = StatusCodes.Status429TooManyRequests,
+                    Title = "TooManyRequests",
+                    Detail = "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
+                    Instance = context.HttpContext.Request.Path
+                }, options: null, contentType: "application/problem+json", cancellationToken);
+            };
         });
 
         return services;
