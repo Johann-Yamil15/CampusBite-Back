@@ -154,6 +154,63 @@ Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato Pr
 Reglas de registro: nombre de 2 a 80 caracteres, correo válido de máximo 120, contraseña de 8 a 72,
 matrícula de máximo 20 y teléfono de 10 a 15 dígitos (los dos últimos son opcionales).
 
+## Conexiones a la base de datos (local y producción)
+
+La API puede trabajar con dos bases. Las dos usan el rol `app_backend`, que solo ejecuta los `sp_*` y lee
+`vw_menu_cafeteria` (no tiene acceso directo a tablas).
+
+| | Local (desarrollo) | Producción (nube) |
+|---|---|---|
+| Servidor | PostgreSQL en tu máquina, `localhost:5432` | Neon (PostgreSQL 18), región `us-east-2` |
+| Host | `localhost` | `ep-bold-haze-b5zagdgx-pooler.c-7.us-east-2.aws.neon.tech` |
+| Base | `campusbite` | `neondb` |
+| Usuario de la API | `app_backend` | `app_backend` |
+| Contraseña | `app_backend_dev` (pública, solo local) | Secreta: está en Azure y la da el responsable del backend |
+| Conexión segura | No aplica | `SSL Mode=Require;Channel Binding=Require` |
+| Cómo se crea el esquema | Script consolidado (`db/consolidado`) o Liquibase con contexto `dev` | Liquibase con contexto `prod`, desde una PC del equipo |
+| Datos | De prueba (seed): 3 usuarios, 1 cafetería y 3 productos | Reales; sin datos de prueba |
+| Variable en `.env` | `ConnectionStrings__Local` | `ConnectionStrings__Produccion` |
+
+**Cómo elegir la base al correr la API en tu máquina.** `Database__Conexion` decide cuál cadena se usa, y los
+perfiles de arranque ya la fijan:
+
+| Perfil (Visual Studio o `--launch-profile`) | Base |
+|---|---|
+| `http` (el de `dotnet run`) / `https` | Local |
+| `https (BD produccion)` | Producción. **Los registros y cambios son reales**: úsalo solo para revisar un problema |
+
+Al arrancar, la consola muestra a qué base se conectó y avisa con `warn` cuando es producción:
+
+```
+info: Base de datos local (Local): campusbite en localhost, usuario app_backend
+warn: Base de datos de PRODUCCIÓN (Produccion): neondb en ep-bold-haze-...neon.tech, usuario app_backend. Los cambios son reales.
+```
+
+**En Azure** no se usa `Database__Conexion`: la API toma `ConnectionStrings__Database` de las variables del
+App Service. Si no hay selector, siempre se usa esa variable, así que en Azure no hay que cambiar nada.
+
+**Reglas**
+- La contraseña de producción y la de `neondb_owner` (dueño de la base, solo para Liquibase) **nunca** van al repo,
+  al README ni a chats. Se comparten en persona o por un gestor de contraseñas.
+- Para probar algo que escribe datos, usa la base local. Si necesitas datos reales, pide un respaldo.
+
+## CORS: qué fronts pueden llamar a la API
+
+Los orígenes no son secretos, así que van en `appsettings` según el ambiente:
+
+| Ambiente | Archivo | Fronts permitidos |
+|---|---|---|
+| Development (tu máquina) | `appsettings.Development.json` | `http://localhost:4200`, `https://localhost:4200` y el front de producción |
+| Production (Azure) | `appsettings.json` | Solo `https://campusbite-front-awbkd6becga6c7aw.centralus-01.azurewebsites.net` |
+
+- En local, el front Angular (`ng serve`, puerto 4200) llama a `/api` y su `proxy.conf.json` lo manda a
+  `https://localhost:7254`, así que normalmente ni pasa por CORS. Para eso, el back debe correr con el perfil `https`.
+- El origen va **sin "/" final** (si se pone, la API lo quita).
+- Para reemplazar la lista en cualquier ambiente: variable `Cors__AllowedOrigins` (separados por coma). Si en
+  Azure existe esa variable, manda sobre `appsettings.json`: bórrala o pon ahí la URL del front.
+- Si un front nuevo cambia de URL, se actualiza `appsettings.json` y se despliega.
+- Al arrancar, la consola muestra la lista: `CORS permite: ...`.
+
 ## Variables de entorno
 Los secretos **no** van en `appsettings.json`. Se leen del archivo `.env` (local) o de las variables de entorno del servidor.
 
@@ -163,11 +220,13 @@ cp .env.example .env   # y llenar los valores reales
 
 | Variable | Descripción |
 |---|---|
-| `ConnectionStrings__Database` | Cadena de conexión de PostgreSQL |
+| `Database__Conexion` | `Local` o `Produccion`: cuál de las dos cadenas usar en tu máquina (los perfiles ya la fijan) |
+| `ConnectionStrings__Local` / `ConnectionStrings__Produccion` | Cadenas de la base local y de Neon |
+| `ConnectionStrings__Database` | Cadena que usa Azure (cuando no hay `Database__Conexion`) |
 | `Jwt__Key` | Llave de firma del JWT (mínimo 32 caracteres) |
 | `Jwt__Issuer` / `Jwt__Audience` | Emisor y audiencia del token |
 | `Jwt__ExpirationMinutes` | Duración del token |
-| `Cors__AllowedOrigins` | Orígenes del front separados por coma (vacío = cualquiera) |
+| `Cors__AllowedOrigins` | Opcional: reemplaza los fronts permitidos de `appsettings` (separados por coma) |
 | `Swagger__Enabled` | Muestra Swagger fuera de Development |
 | `RateLimit__AuthPermitLimit` / `RateLimit__AuthWindowSeconds` | Intentos de login/registro por IP y ventana en segundos (opcional; 20 por 60 s) |
 
@@ -181,8 +240,8 @@ docker compose up -d db
 docker compose run --rm liquibase
 cd ..
 
-# 2) Levantar la API. En .env: ConnectionStrings__Database con Username=app_backend;Password=app_backend_dev
-dotnet run --project src/CampusBite.Api --launch-profile http
+# 2) Levantar la API con la base local (ConnectionStrings__Local en .env)
+dotnet run --project src/CampusBite.Api --launch-profile https    # https://localhost:7254 (el que usa el proxy del front)
 
 # 3) Pruebas (también corren en GitHub Actions antes de cada despliegue)
 dotnet test
@@ -195,9 +254,9 @@ En Visual Studio abre `CampusBite-Back.sln` y marca `CampusBite.Api` como proyec
 [`db/consolidado/README.md`](db/consolidado/README.md).
 
 Si ya tienes PostgreSQL instalado en el puerto 5432, el contenedor `db` choca con él: cambia `DB_PORT` en
-`db/.env` (por ejemplo, `5433`) y usa ese mismo puerto en `ConnectionStrings__Database`.
+`db/.env` (por ejemplo, `5433`) y usa ese mismo puerto en `ConnectionStrings__Local`.
 
-Swagger: http://localhost:5167/swagger — usa `POST /api/auth/login` y pega el token en **Authorize**.
+Swagger: https://localhost:7254/swagger (o http://localhost:5167/swagger con el perfil `http`) — usa `POST /api/auth/login` y pega el token en **Authorize**.
 
 ## Contraseñas y token JWT
 - **Contraseñas:** se cifran con BCrypt, costo 12 (`src/CampusBite.Infrastructure/Security/BCryptPasswordHasher.cs`). La base solo guarda el hash.

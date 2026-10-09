@@ -6,6 +6,7 @@ using CampusBite.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace CampusBite.Infrastructure;
 
@@ -26,15 +27,23 @@ public static class DependencyInjection
         return services;
     }
 
-    // JJ-Sprint1 02/10/2026: base de datos PostgreSQL con EF Core; el esquema lo controla Liquibase (db/)
+    // JJ-Sprint2 09/10/2026: elige la conexión. Database__Conexion=Local|Produccion usa ConnectionStrings__Local / __Produccion
+    // (desarrollo); si no está definida usa ConnectionStrings__Database (así está configurado Azure)
     private static void AddDatabase(IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Database");
+        var conexion = configuration["Database:Conexion"];
+        var nombre = string.IsNullOrWhiteSpace(conexion) ? "Database" : conexion.Trim();
+
+        var connectionString = configuration.GetConnectionString(nombre);
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             throw new InvalidOperationException(
-                "ConnectionStrings:Database no está configurada. Define ConnectionStrings__Database en el archivo .env o en las variables de entorno.");
+                $"ConnectionStrings:{nombre} no está configurada. Define ConnectionStrings__{nombre} en el archivo .env " +
+                "o en las variables de entorno (ver README, sección \"Conexiones a la base de datos\").");
         }
+
+        var datos = new NpgsqlConnectionStringBuilder(connectionString);
+        services.AddSingleton(new DatabaseInfo(nombre, datos.Host ?? "?", datos.Database ?? "?", datos.Username ?? "?"));
 
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(connectionString)

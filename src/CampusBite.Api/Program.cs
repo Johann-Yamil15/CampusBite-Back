@@ -3,6 +3,7 @@ using CampusBite.Api.Common.Middleware;
 using CampusBite.Api.Common.Settings;
 using CampusBite.Application;
 using CampusBite.Infrastructure;
+using CampusBite.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 
 // FB-Sprint1 02/10/2026: carga el archivo .env (si existe) sin sobrescribir variables de entorno reales
@@ -44,6 +45,21 @@ builder.Services.AddSwaggerDocumentation();
 builder.Services.AddAuthRateLimiting(builder.Configuration);
 
 var app = builder.Build();
+
+// JJ-Sprint2 09/10/2026: muestra al arrancar a qué base se conectó y qué fronts acepta CORS, para no usar producción por error
+var baseDatos = app.Services.GetRequiredService<DatabaseInfo>();
+var origenes = (app.Configuration.GetSection(CorsSettings.SectionName).Get<CorsSettings>() ?? new CorsSettings()).GetOrigins();
+if (baseDatos.EsProduccion)
+{
+    app.Logger.LogWarning("Base de datos de PRODUCCIÓN ({Conexion}): {Database} en {Host}, usuario {Username}. Los cambios son reales.",
+        baseDatos.Conexion, baseDatos.Database, baseDatos.Host, baseDatos.Username);
+}
+else
+{
+    app.Logger.LogInformation("Base de datos local ({Conexion}): {Database} en {Host}, usuario {Username}",
+        baseDatos.Conexion, baseDatos.Database, baseDatos.Host, baseDatos.Username);
+}
+app.Logger.LogInformation("CORS permite: {Origenes}", origenes.Length > 0 ? string.Join(", ", origenes) : "cualquier origen");
 
 // JJ-Sprint2 09/10/2026: toma la IP real del cliente detrás del proxy de Azure (la usa el límite de intentos)
 app.UseForwardedHeaders();

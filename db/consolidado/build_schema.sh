@@ -4,9 +4,9 @@
 #
 # Une en UN solo archivo .sql los scripts listados en orden.txt, con encabezado de versión
 # (V1.0.0.NNN, el último número sube 1 en cada versión), fecha, hora, autor y huella (hash).
-# Regenera también README.md con el historial de versiones.
+# Siempre regenera README.md con el historial de versiones.
 #
-# Uso (desde cualquier carpeta, en Git Bash / Linux / macOS):
+# Uso (desde la raíz del repo, en Git Bash / Linux / macOS):
 #   ./db/consolidado/build_schema.sh            genera una versión nueva solo si cambió algún script
 #   ./db/consolidado/build_schema.sh --force    genera una versión nueva aunque no haya cambios
 # =====================================================================
@@ -24,6 +24,92 @@ FORZAR=false
 [[ "${1:-}" == "--force" ]] && FORZAR=true
 
 error() { echo "ERROR: $*" >&2; exit 1; }
+
+# JJ-Sprint2 09/10/2026: README generado a partir de la última línea del historial (se llama siempre)
+generar_readme() {
+  local ultima version fecha autor
+  ultima="$(grep -E '^V[0-9]' "$HISTORIAL" | tail -1)"
+  version="$(echo "$ultima" | cut -d'|' -f1)"
+  fecha="$(echo "$ultima" | cut -d'|' -f2)"
+  autor="$(echo "$ultima" | cut -d'|' -f5)"
+  {
+    cat <<EOF
+# Script consolidado de la base de datos (pruebas locales)
+
+> Este archivo lo genera \`build_schema.sh\`. No lo edites a mano: se reescribe cada vez que se ejecuta.
+
+**Versión actual: \`$version\`** · generada el $fecha por $autor · archivo
+[\`versiones/campusbite_$version.sql\`](versiones/campusbite_$version.sql)
+
+Un solo archivo \`.sql\` con todo el esquema de CampusBite, el login de desarrollo de \`app_backend\` y los datos
+de prueba, para levantar la base en local **sin Docker ni Liquibase**. Producción no usa este archivo: se migra
+con Liquibase desde \`db/changelog\` (ver \`db/README.md\`).
+
+## Comandos rápidos
+
+Desde la **raíz del repo**, en **Git Bash** (Windows) o en la terminal (Linux/macOS):
+
+| Para qué | Comando |
+|---|---|
+| **Generar una versión nueva del script** | \`./db/consolidado/build_schema.sh\` |
+| Forzar versión nueva aunque no cambie nada | \`./db/consolidado/build_schema.sh --force\` |
+| Crear tu base local vacía | \`createdb -U postgres campusbite\` |
+| Cargar la versión actual en tu base local | \`psql -U postgres -d campusbite -f db/consolidado/versiones/campusbite_$version.sql\` |
+| Ver qué versión tiene tu base | \`psql -U postgres -d campusbite -c "SELECT obj_description('public'::regnamespace);"\` |
+| Correr las 16 verificaciones de Joseph | \`psql -U postgres -d campusbite -f db/tests/smoke_test.sql\` |
+| Borrar tu base local para empezar de cero | \`dropdb -U postgres campusbite\` |
+
+> En PowerShell o CMD no corre \`./build_schema.sh\`: usa Git Bash, o \`bash db/consolidado/build_schema.sh\`.
+
+## Probar en local
+
+Requisito: PostgreSQL 14 o superior con \`psql\` en el PATH.
+
+\`\`\`bash
+createdb -U postgres campusbite
+psql -U postgres -d campusbite -f db/consolidado/versiones/campusbite_$version.sql
+\`\`\`
+
+En el \`.env\` de la raíz del repo, la conexión local ya viene así en \`.env.example\`:
+
+\`\`\`
+ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=app_backend_dev
+\`\`\`
+
+- El script corre en **una sola transacción**: si algo falla, la base queda como estaba.
+- Si la base **ya tiene** el esquema, se detiene sin cambiar nada. Para cargar una versión nueva:
+  \`dropdb -U postgres campusbite\`, \`createdb -U postgres campusbite\` y vuelve a cargar el script.
+- Incluye la clave de desarrollo \`app_backend_dev\` y datos de prueba: **nunca** lo corras en un servidor real.
+
+## Generar una versión nueva (cuando cambia la base)
+
+1. Crea la migración en \`db/changelog/migrations/\` y su changeSet en \`changelog-master.xml\` (flujo de Liquibase).
+2. Agrega la ruta del archivo en \`orden.txt\`, en el lugar donde debe ejecutarse.
+3. Genera la versión:
+   \`\`\`bash
+   ./db/consolidado/build_schema.sh
+   \`\`\`
+   Salida esperada: \`Versión V$PREFIJO.NNN generada\` con la ruta del archivo nuevo en \`versiones/\`.
+4. Sube a Git los scripts nuevos, \`orden.txt\`, \`historial.txt\`, este \`README.md\` y el archivo nuevo de \`versiones/\`.
+
+Reglas del consolidador:
+- La versión es \`V$PREFIJO.NNN\`: el último número sube **1** en cada versión.
+- Solo genera versión si cambió el contenido de algún script (compara la huella); si no, responde
+  "Sin cambios..." y solo actualiza este README. Para forzarla: \`--force\`.
+- Se detiene si \`orden.txt\` menciona un archivo que no existe, o si falta alguna migración que sí está en
+  \`changelog-master.xml\`.
+- No edites migraciones ya aplicadas: Liquibase las protege por checksum. Los cambios van en una migración nueva.
+
+## Historial de versiones
+
+| Versión | Fecha y hora | Huella | Scripts | Autor |
+|---|---|---|---|---|
+EOF
+    grep -E '^V[0-9]' "$HISTORIAL" | sort -t'|' -k1,1r | while IFS='|' read -r v f h l a; do
+      echo "| \`$v\` | $f | \`$h\` | ${l//,/, } | $a |"
+    done
+  } > "$README"
+}
 
 # --- 1. Leer el manifiesto -----------------------------------------------
 [[ -f "$MANIFEST" ]] || error "No existe $MANIFEST"
@@ -56,7 +142,9 @@ if [[ -n "$ULTIMA" ]]; then
   ULTIMO_NUM=$((10#${ULTIMA_VERSION##*.}))
   ULTIMO_HASH="$(echo "$ULTIMA" | cut -d'|' -f3)"
   if [[ "$ULTIMO_HASH" == "$HASH" && "$FORZAR" == false ]]; then
+    generar_readme
     echo "Sin cambios en los scripts desde $ULTIMA_VERSION. No se genera versión nueva (usa --force para forzarla)."
+    echo "README actualizado: $README"
     exit 0
   fi
 fi
@@ -115,79 +203,12 @@ mkdir -p "$VERSIONES"
   echo "\\echo '>>> CampusBite $VERSION aplicada correctamente'"
 } > "$SALIDA"
 
-# --- 6. Registrar en el historial ------------------------------------------------
+# --- 6. Registrar en el historial y regenerar el README ---------------------------
 if [[ ! -f "$HISTORIAL" ]]; then
   echo "# version|fecha|huella|scripts|autor   (lo escribe build_schema.sh; no editar a mano)" > "$HISTORIAL"
 fi
 echo "$VERSION|$FECHA|$HASH|$LISTA|$AUTOR" >> "$HISTORIAL"
-
-# --- 7. Regenerar README.md --------------------------------------------------------
-{
-  cat <<EOF
-# Script consolidado de la base de datos (pruebas locales)
-
-> Este archivo lo genera \`build_schema.sh\`. No lo edites a mano: tus cambios se perderán en la próxima versión.
-
-**Versión actual: \`$VERSION\`** · generada el $FECHA por $AUTOR · archivo
-[\`versiones/campusbite_$VERSION.sql\`](versiones/campusbite_$VERSION.sql)
-
-Un solo archivo \`.sql\` con todo el esquema de CampusBite, el login de desarrollo de \`app_backend\` y los datos
-de prueba, para levantar la base en local **sin Docker ni Liquibase**. Producción no usa este archivo: se migra
-con Liquibase desde \`db/changelog\` (ver \`db/README.md\`).
-
-## Probar en local
-
-Requisito: PostgreSQL 14 o superior con \`psql\` en el PATH.
-
-\`\`\`bash
-createdb -U postgres campusbite
-psql -U postgres -d campusbite -f db/consolidado/versiones/campusbite_$VERSION.sql
-\`\`\`
-
-Luego, en el \`.env\` de la raíz del repo:
-
-\`\`\`
-ConnectionStrings__Database=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=app_backend_dev
-\`\`\`
-
-Verificaciones opcionales:
-
-\`\`\`bash
-psql -U postgres -d campusbite -c "SELECT obj_description('public'::regnamespace);"   # muestra la versión aplicada
-psql -U postgres -d campusbite -f db/tests/smoke_test.sql                             # 16 verificaciones de Joseph
-\`\`\`
-
-- El script corre en **una sola transacción**: si algo falla, la base queda como estaba.
-- Si la base **ya tiene** el esquema, se detiene sin cambiar nada. Para empezar de cero:
-  \`dropdb -U postgres campusbite\` y repite los pasos.
-- Incluye la clave de desarrollo \`app_backend_dev\` y datos de prueba: **nunca** lo corras en un servidor real.
-
-## Generar una versión nueva
-
-1. Crea la migración en \`db/changelog/migrations/\` y su changeSet en \`changelog-master.xml\` (flujo de Liquibase).
-2. Agrega la ruta del archivo en \`orden.txt\`, en el lugar donde debe ejecutarse.
-3. Ejecuta desde la raíz del repo (Git Bash en Windows):
-   \`\`\`bash
-   ./db/consolidado/build_schema.sh
-   \`\`\`
-4. Sube a Git los scripts nuevos, \`orden.txt\`, \`historial.txt\`, este \`README.md\` y el archivo nuevo de \`versiones/\`.
-
-Reglas del consolidador:
-- La versión es \`V$PREFIJO.NNN\`: el último número sube **1** en cada versión.
-- Solo genera versión si cambió el contenido de algún script (compara la huella). Para forzarla: \`--force\`.
-- Se detiene si \`orden.txt\` menciona un archivo que no existe, o si falta alguna migración que sí está en
-  \`changelog-master.xml\`.
-- No edites migraciones ya aplicadas: Liquibase las protege por checksum. Los cambios van en una migración nueva.
-
-## Historial de versiones
-
-| Versión | Fecha y hora | Huella | Scripts | Autor |
-|---|---|---|---|---|
-EOF
-  grep -E '^V[0-9]' "$HISTORIAL" | sort -t'|' -k1,1r | while IFS='|' read -r v f h l a; do
-    echo "| \`$v\` | $f | \`$h\` | ${l//,/, } | $a |"
-  done
-} > "$README"
+generar_readme
 
 echo "Versión $VERSION generada:"
 echo "  - $SALIDA"
