@@ -190,6 +190,10 @@ dotnet test
 
 En Visual Studio abre `CampusBite-Back.sln` y marca `CampusBite.Api` como proyecto de inicio.
 
+**Sin Docker:** si ya tienes PostgreSQL instalado, usa el script consolidado y versionado
+(`V1.0.0.NNN`, un solo archivo con esquema y datos de prueba). Instrucciones en
+[`db/consolidado/README.md`](db/consolidado/README.md).
+
 Si ya tienes PostgreSQL instalado en el puerto 5432, el contenedor `db` choca con él: cambia `DB_PORT` en
 `db/.env` (por ejemplo, `5433`) y usa ese mismo puerto en `ConnectionStrings__Database`.
 
