@@ -1,0 +1,2 @@
+# version|fecha|huella|scripts|autor   (lo escribe build_schema.sh; no editar a mano)
+V1.0.0.001|2026-10-09 16:12:10 -0600|3b3a2842e3aa|V001__esquema_inicial,V002__logica_negocio,V003__vistas_y_seguridad,V004__endurecimiento_seguridad,V005__depuracion_indices,01_login_app_backend_dev,seed_dev|Johann Yamil

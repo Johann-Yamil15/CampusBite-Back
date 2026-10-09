@@ -11,6 +11,8 @@ env:
   AZURE_WEBAPP_NAME: "campusbite-back"
   DOTNET_VERSION: "9.0.x"
   PUBLISH_PATH: "./publish"
+  # JJ-Sprint2 09/10/2026: arquitectura limpia; solo se publica la Api (incluye Application, Domain e Infrastructure)
+  API_PROJECT: "src/CampusBite.Api/CampusBite.Api.csproj"
 
 jobs:
   build:
@@ -27,13 +29,17 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: 📦 Restaurar dependencias
-        run: dotnet restore
+        run: dotnet restore CampusBite-Back.sln
 
       - name: 🏗️ Compilar
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build CampusBite-Back.sln --configuration Release --no-restore
+
+      # JJ-Sprint2 09/10/2026: si una prueba falla, no se despliega
+      - name: 🧪 Pruebas
+        run: dotnet test CampusBite-Back.sln --configuration Release --no-build --verbosity normal
 
       - name: 📦 Publicar
-        run: dotnet publish --configuration Release --no-build --output ${{ env.PUBLISH_PATH }}
+        run: dotnet publish ${{ env.API_PROJECT }} --configuration Release --no-build --output ${{ env.PUBLISH_PATH }}
 
       - name: 📤 Subir artefacto
         uses: actions/upload-artifact@v4
