@@ -16,6 +16,7 @@ public static class ServiceCollectionExtensions
     // JJ-Sprint1 02/10/2026: inyección de dependencias interfaz -> servicio (registrar aquí cada servicio nuevo)
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
+        services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthService, AuthService>();
 
@@ -52,11 +53,20 @@ public static class ServiceCollectionExtensions
                 "Jwt:Key no está configurada o es muy corta (mínimo 32 caracteres). Define Jwt__Key en el archivo .env o en las variables de entorno.");
         }
 
+        // JJ-Sprint2 09/10/2026: emisor, audiencia y duración también son obligatorios para emitir tokens válidos
+        if (string.IsNullOrWhiteSpace(jwt.Issuer) || string.IsNullOrWhiteSpace(jwt.Audience) || jwt.ExpirationMinutes <= 0)
+        {
+            throw new InvalidOperationException(
+                "Jwt:Issuer, Jwt:Audience y Jwt:ExpirationMinutes (mayor a 0) deben estar configurados.");
+        }
+
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
+                    // JJ-Sprint2 09/10/2026: solo se aceptan tokens firmados con HS256 (evita confusión de algoritmo)
+                    ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
                     ValidateIssuer = true,
                     ValidIssuer = jwt.Issuer,
                     ValidateAudience = true,

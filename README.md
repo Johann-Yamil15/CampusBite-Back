@@ -126,3 +126,24 @@ Si ya tienes PostgreSQL instalado en el puerto 5432, el contenedor `db` choca co
 `db/.env` (por ejemplo, `5433`) y usa ese mismo puerto en `ConnectionStrings__Database`.
 
 Swagger: http://localhost:5167/swagger — usa `POST /api/auth/login` y pega el token en **Authorize**.
+
+## Contraseñas y token JWT
+- **Contraseñas:** se cifran con BCrypt, costo 12 (`Services/BCryptPasswordHasher.cs`). La base solo guarda el hash.
+  El login tarda lo mismo exista o no el correo, para no revelar qué correos están registrados.
+- **Token:** JWT firmado con HS256, dura `Jwt__ExpirationMinutes` (60 por defecto). Se envía en cada petición protegida como
+  `Authorization: Bearer <token>`. Contenido (payload) que puede leer el front:
+
+```json
+{
+  "sub": "1ffc232e-0d4d-4206-9362-87a949b4342a",
+  "email": "alumno@uttt.edu.mx",
+  "role": "Alumno",
+  "jti": "id único del token",
+  "iat": 1760000000, "nbf": 1760000000, "exp": 1760003600,
+  "iss": "CampusBite.API", "aud": "CampusBite.PWA"
+}
+```
+
+  - `role` es `Alumno`, `AdminCafeteria` o `AdminSistema`; los guards del front y `[Authorize(Roles = ...)]` usan esos nombres.
+  - `exp` está en segundos UTC: el front debe mandar al login cuando se venza (la API responde 401).
+  - Leer el payload en el front sirve para mostrar u ocultar pantallas; la seguridad real la valida siempre la API.
