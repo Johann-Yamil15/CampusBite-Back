@@ -4,30 +4,47 @@ API de CampusBite: gestiona usuarios, autenticación, cafeterías, menús, pedid
 ## Stack
 .NET 9 · ASP.NET Core Web API · EF Core + PostgreSQL · JWT Bearer · Swagger · CORS
 
-## Estructura
+## Estructura: arquitectura limpia por módulos
+
+Cuatro proyectos (capas) y, dentro de cada uno, una carpeta por módulo (`Auth/`, `Cafeterias/`, `Ordenes/`...).
+Cada módulo es una "rebanada vertical" que atraviesa las cuatro capas.
 
 ```
-Controllers/        Endpoints HTTP. Solo reciben la petición y llaman a la interfaz del servicio.
-Interfaces/         Contratos (IAuthService, ITokenService, ...).
-Services/           Implementan las interfaces; aquí vive la lógica de negocio.
-Models/
-  Entities/         Filas que devuelven los procedimientos y vistas de la BD.
-  Dtos/<Modulo>/    Objetos de entrada/salida de la API (nunca exponer entidades directo).
-  Enums/            RolUsuario coincide con el catálogo `rol` (id_rol).
-Data/               AppDbContext: conexión a PostgreSQL (sin DbSet ni migraciones de EF).
-db/                 Esquema oficial de la BD: migraciones SQL, seed y smoke test (ver db/README.md).
-Common/
-  Extensions/       Registro de servicios (BD, JWT, CORS, Swagger, inyección de dependencias).
-  Middleware/       Manejo global de errores.
-  Exceptions/       ApiException para errores de negocio (404, 409, 401, ...).
-  Settings/         Clases que mapean la configuración (JwtSettings, CorsSettings).
+CampusBite-Back.sln
+src/
+  CampusBite.Domain/          Núcleo del negocio. No depende de nada.
+    Auth/                     RolUsuario
+    Common/Exceptions/        NotFound, Conflict, Unauthorized, Forbidden, BusinessRule (sin HTTP)
+  CampusBite.Application/     Casos de uso. Depende solo de Domain (sin EF, Npgsql, BCrypt ni ASP.NET).
+    Auth/                     IAuthService, AuthService, IUsuarioRepository, Dtos/
+    Common/Security/          IPasswordHasher, ITokenService (contratos)
+    DependencyInjection.cs    AddApplication(): registra los servicios de cada módulo
+  CampusBite.Infrastructure/  Detalles técnicos que implementan los contratos de Application.
+    Auth/                     UsuarioRepository (llama a los sp_* de la BD)
+    Persistence/              AppDbContext (conexión a PostgreSQL)
+    Security/                 BCryptPasswordHasher, TokenService (JWT), JwtSettings
+    DependencyInjection.cs    AddInfrastructure(): BD, repositorios, BCrypt y JWT
+  CampusBite.Api/             Capa web: controladores, middleware y Program.cs.
+    Auth/                     AuthController
+    Common/                   Middleware (errores), Extensions (JWT, CORS, Swagger, límite de intentos), Settings
+tests/
+  CampusBite.Application.Tests/  Pruebas de los servicios con dobles (sin base de datos)
+db/                           Esquema oficial de la BD con Liquibase (ver db/README.md)
 ```
+
+**Regla de dependencias** (el compilador la hace cumplir): `Api → Application → Domain ← Infrastructure`, y `Api`
+conoce a `Infrastructure` solo para registrarla en `Program.cs`.
+- Un servicio de Application **nunca** usa `AppDbContext`, SQL ni Npgsql: pide los datos a un repositorio (interfaz).
+- Un controlador **nunca** tiene lógica: valida el DTO, llama al servicio y devuelve el resultado.
+- Los errores de negocio se lanzan con las excepciones de Domain; `ExceptionMiddleware` es el único lugar que
+  decide el código HTTP.
 
 ### Base de datos
 El esquema lo controlan los scripts de `db/`, **no** EF Core: no uses `dotnet ef migrations`.
 La API se conecta con el usuario `app_backend`, que no puede leer tablas: solo ejecuta los procedimientos `sp_*`
-y lee la vista `vw_menu_cafeteria`. Por eso los servicios consultan con `_context.Database.SqlQuery<T>(...)`
-sobre ellos (ver `Services/AuthService.cs`). Si necesitas otra consulta, se agrega una migración nueva en
+y lee la vista `vw_menu_cafeteria`. Por eso los repositorios de Infrastructure consultan con
+`_context.Database.SqlQuery<T>(...)` sobre ellos (ver `src/CampusBite.Infrastructure/Auth/UsuarioRepository.cs`).
+Si necesitas otra consulta, se agrega una migración nueva en
 `db/changelog/migrations/V00N__...sql`, con su `changeSet` en `changelog-master.xml` y su `GRANT` a `app_backend`.
 
 ### Qué hay en la base de datos
@@ -82,15 +99,23 @@ Al cancelar una orden, su pago pasa solo a `reembolsado` (si ya estaba pagado) o
 Lo que no aparece aquí (por ejemplo, el CRUD de cafeterías y productos, el perfil del usuario o las suscripciones push) todavía no tiene procedimiento o vista con permiso para `app_backend`: hay que agregarlo en una migración nueva.
 
 ### Agregar un módulo nuevo (ej. Cafeterías)
-1. Clase en `Models/Entities/` con las columnas que devuelve la vista o el procedimiento.
-2. DTOs en `Models/Dtos/Cafeterias/`.
-3. Interfaz `Interfaces/ICafeteriaService.cs`.
-4. Servicio `Services/CafeteriaService.cs : ICafeteriaService`.
-5. Registrar en `Common/Extensions/ServiceCollectionExtensions.cs` → `AddApplicationServices`:
-   `services.AddScoped<ICafeteriaService, CafeteriaService>();`
-6. Controlador `Controllers/CafeteriasController.cs` que recibe `ICafeteriaService` por constructor.
-7. Para errores de negocio lanza `ApiException.NotFound("...")`, etc. El middleware arma la respuesta.
-8. Para proteger un endpoint usa `[Authorize]` o `[Authorize(Roles = "AdminSistema")]` (roles: `Alumno`, `AdminCafeteria`, `AdminSistema`).
+Se crea la misma carpeta `Cafeterias/` en cada capa que la necesite, de adentro hacia afuera:
+
+| # | Capa | Archivo | Qué contiene |
+|---|---|---|---|
+| 1 | Domain | `Cafeterias/` (solo si hace falta) | Enums o reglas propias del módulo |
+| 2 | Application | `Cafeterias/Dtos/*.cs` | Entrada y salida de la API, con validaciones y mensajes en español |
+| 3 | Application | `Cafeterias/ICafeteriaRepository.cs` + la clase de lo que devuelve | Qué datos necesita el módulo (sin SQL) |
+| 4 | Application | `Cafeterias/ICafeteriaService.cs` + `CafeteriaService.cs` | Reglas del negocio; usa el repositorio |
+| 5 | Application | `DependencyInjection.cs` | `services.AddScoped<ICafeteriaService, CafeteriaService>();` |
+| 6 | Infrastructure | `Cafeterias/CafeteriaRepository.cs` | SQL sobre los `sp_*` o `vw_*`; traduce errores de PostgreSQL a excepciones de Domain |
+| 7 | Infrastructure | `DependencyInjection.cs` | `services.AddScoped<ICafeteriaRepository, CafeteriaRepository>();` |
+| 8 | Api | `Cafeterias/CafeteriasController.cs` | Recibe `ICafeteriaService` por constructor; pasa el `CancellationToken` |
+| 9 | Tests | `Cafeterias/CafeteriaServiceTests.cs` | Pruebas del servicio con un repositorio falso |
+
+- Errores de negocio: `throw new NotFoundException("...")`, `ConflictException`, `ForbiddenException`, etc.
+- Proteger un endpoint: `[Authorize]` o `[Authorize(Roles = "AdminSistema")]` (roles: `Alumno`, `AdminCafeteria`, `AdminSistema`).
+- Usa el módulo `Auth/` de cada capa como ejemplo a copiar.
 
 ## API de autenticación
 Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato ProblemDetails
@@ -157,8 +182,13 @@ docker compose run --rm liquibase
 cd ..
 
 # 2) Levantar la API. En .env: ConnectionStrings__Database con Username=app_backend;Password=app_backend_dev
-dotnet run --launch-profile http
+dotnet run --project src/CampusBite.Api --launch-profile http
+
+# 3) Pruebas (también corren en GitHub Actions antes de cada despliegue)
+dotnet test
 ```
+
+En Visual Studio abre `CampusBite-Back.sln` y marca `CampusBite.Api` como proyecto de inicio.
 
 Si ya tienes PostgreSQL instalado en el puerto 5432, el contenedor `db` choca con él: cambia `DB_PORT` en
 `db/.env` (por ejemplo, `5433`) y usa ese mismo puerto en `ConnectionStrings__Database`.
@@ -166,7 +196,7 @@ Si ya tienes PostgreSQL instalado en el puerto 5432, el contenedor `db` choca co
 Swagger: http://localhost:5167/swagger — usa `POST /api/auth/login` y pega el token en **Authorize**.
 
 ## Contraseñas y token JWT
-- **Contraseñas:** se cifran con BCrypt, costo 12 (`Services/BCryptPasswordHasher.cs`). La base solo guarda el hash.
+- **Contraseñas:** se cifran con BCrypt, costo 12 (`src/CampusBite.Infrastructure/Security/BCryptPasswordHasher.cs`). La base solo guarda el hash.
   El login tarda lo mismo exista o no el correo, para no revelar qué correos están registrados.
 - **Token:** JWT firmado con HS256, dura `Jwt__ExpirationMinutes` (60 por defecto). Se envía en cada petición protegida como
   `Authorization: Bearer <token>`. Contenido (payload) que puede leer el front:
