@@ -1,17 +1,18 @@
 # JJ-Sprint2 09/10/2026: manifiesto del script consolidado. Orden EXACTO de ejecución.
-# Rutas relativas a la carpeta db/. Se apunta a los mismos archivos que usa Liquibase (no se copian).
+# JY-Sprint2 09/10/2026: ahora lista MÓDULOS (carpetas de db/scripts con su propio orden.txt).
+# Rutas relativas a la carpeta db/. También acepta un archivo .sql suelto.
 # Líneas vacías o que empiezan con # se ignoran.
 #
-# Al agregar una migración nueva (V006, V007...) en changelog-master.xml, agrégala también aquí
-# en su lugar; build_schema.sh se detiene si alguna migración del changelog falta en este archivo.
+# Al agregar un script, ponlo en el orden.txt de su módulo; aquí solo se agregan módulos nuevos.
+# El changelog de Liquibase (db/changelog/changelog-master.xml) se genera a partir de estas listas.
 
-# Esquema (los mismos changesets que Liquibase aplica en producción)
-changelog/migrations/V001__esquema_inicial.sql
-changelog/migrations/V002__logica_negocio.sql
-changelog/migrations/V003__vistas_y_seguridad.sql
-changelog/migrations/V004__endurecimiento_seguridad.sql
-changelog/migrations/V005__depuracion_indices.sql
+scripts/01_base
+scripts/02_tablas
+scripts/03_cambios_sprint2
+scripts/04_triggers
+scripts/05_vistas
+scripts/06_procedimientos
+scripts/07_seguridad
 
-# Solo desarrollo local (equivale al contexto "dev" de Liquibase)
-consolidado/dev/01_login_app_backend_dev.sql
-changelog/seeds/seed_dev.sql
+# Solo desarrollo local (su orden.txt lo marca con context=dev: queda fuera del archivo _prod)
+scripts/90_datos_dev

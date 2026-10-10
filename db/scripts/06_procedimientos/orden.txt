@@ -1,0 +1,28 @@
+# Módulo 06_procedimientos: lo único que puede ejecutar la API (rol app_backend). Todos son PROCEDURE.
+# Se llaman con CALL. Los que devuelven algo lo hacen por parámetros OUT: desde la API se pasa NULL en su
+# lugar y CALL regresa una fila con esos valores. Las listas se devuelven como JSONB.
+# Todo es CREATE OR REPLACE: se pueden editar y volver a ejecutar. Si cambian los parámetros de uno,
+# agrega antes un DROP PROCEDURE IF EXISTS con la firma anterior.
+# Los permisos (GRANT EXECUTE a app_backend) están en 07_seguridad/001_privilegios.sql.
+#
+# Transacciones (JY-Sprint2 10/10/2026):
+#  * Cada CALL es atómico: si algo falla (RAISE EXCEPTION, CHECK, FK, timeout), PostgreSQL deshace TODO lo
+#    que hizo el procedimiento. No hay COMMIT ni ROLLBACK explícitos a propósito: un procedimiento
+#    SECURITY DEFINER o con SET search_path no puede usarlos, y si los usara rompería la transacción del
+#    backend cuando llame a varios procedimientos juntos.
+#  * Orden de bloqueo fijo: primero orden (FOR UPDATE), después pago. Así dos llamadas simultáneas sobre
+#    la misma orden se forman en fila en lugar de bloquearse entre sí.
+#  * Nada se queda trabado: app_backend tiene lock_timeout 3 s, statement_timeout 10 s e
+#    idle_in_transaction_session_timeout 15 s (07_seguridad/002_limites_rol_api.sql).
+001_sp_exigir_gestor_cafeteria.sql
+002_sp_registrar_usuario.sql
+003_sp_obtener_credenciales.sql
+004_sp_menu_cafeteria.sql
+005_sp_crear_orden.sql
+006_sp_confirmar_pago.sql
+007_sp_cambiar_estado_orden.sql
+008_sp_cancelar_orden.sql
+009_sp_entregar_orden.sql
+010_sp_mis_ordenes.sql
+011_sp_cola_cafeteria.sql
+012_sp_bitacora_registro.sql

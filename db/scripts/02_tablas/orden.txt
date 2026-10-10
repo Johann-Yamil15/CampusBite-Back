@@ -1,0 +1,16 @@
+# Módulo 02_tablas: tablas tal como nacieron en V1.0.0.001 (V001), creadas solo si no existen.
+# REGLA: no se edita un archivo de este módulo ya publicado. Un cambio de columna o restricción
+# va en un script nuevo (ver 03_cambios_sprint2), para que las bases existentes también lo reciban.
+001_rol.sql
+002_usuario.sql
+003_cafeteria.sql
+004_horario_cafeteria.sql
+005_categoria.sql
+006_producto.sql
+007_orden.sql
+008_detalle_orden.sql
+009_pago.sql
+010_historial_estado_orden.sql
+011_suscripcion_push.sql
+012_indices.sql
+013_bitacora.sql

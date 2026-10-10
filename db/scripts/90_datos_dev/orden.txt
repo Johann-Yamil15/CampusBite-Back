@@ -1,0 +1,5 @@
+# Módulo 90_datos_dev: SOLO desarrollo local. Clave pública de app_backend y datos de prueba.
+# build_schema.sh lo deja fuera del script _prod y Liquibase solo lo aplica con el contexto dev.
+# liquibase: context=dev
+001_login_app_backend.sql
+002_datos_prueba.sql
