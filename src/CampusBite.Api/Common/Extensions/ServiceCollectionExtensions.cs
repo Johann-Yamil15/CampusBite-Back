@@ -1,10 +1,13 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using CampusBite.Api.Common.Middleware;
+using CampusBite.Api.Common.Security;
 using CampusBite.Api.Common.Settings;
 using CampusBite.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -34,8 +37,14 @@ public static class ServiceCollectionExtensions
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
+                // JY-Sprint2 10/10/2026: los claims se leen con el mismo nombre con que TokenService los escribe
+                // ("sub", "role"), sin la traducción automática a los tipos largos de .NET
+                options.MapInboundClaims = false;
+
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
+                    NameClaimType = JwtRegisteredClaimNames.Sub,
+                    RoleClaimType = TokenService.ClaimRol,
                     // JJ-Sprint2 09/10/2026: solo se aceptan tokens firmados con HS256 (evita confusión de algoritmo)
                     ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
                     ValidateIssuer = true,
@@ -47,9 +56,29 @@ public static class ServiceCollectionExtensions
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(1)
                 };
+
+                // JY-Sprint2 10/10/2026: 401 y 403 con el mismo ProblemDetails que el resto de errores (antes salían vacíos).
+                // No se dice por qué falló un token (firma, emisor...): solo si venció, que es lo único útil para el front.
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        var vencido = context.AuthenticateFailure is SecurityTokenExpiredException;
+                        context.Response.Headers.WWWAuthenticate = vencido
+                            ? "Bearer error=\"invalid_token\", error_description=\"El token venció\""
+                            : "Bearer";
+                        await ProblemaHttp.EscribirAsync(context.HttpContext, StatusCodes.Status401Unauthorized,
+                            vencido ? "Tu sesión venció. Inicia sesión de nuevo." : "Necesitas iniciar sesión para usar este recurso.");
+                    },
+                    OnForbidden = context =>
+                        ProblemaHttp.EscribirAsync(context.HttpContext, StatusCodes.Status403Forbidden,
+                            "Tu rol no tiene permiso para usar este recurso.")
+                };
             });
 
-        services.AddAuthorization();
+        // JY-Sprint2 10/10/2026: TEC-07, políticas por rol y "denegar por defecto" (ver PoliticasAutorizacion)
+        services.AddAutorizacionPorRol();
 
         return services;
     }
