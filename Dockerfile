@@ -1,29 +1,30 @@
-# Consulte https://aka.ms/customizecontainer para aprender a personalizar su contenedor de depuración y cómo Visual Studio usa este Dockerfile para compilar sus imágenes para una depuración más rápida.
+# JJ-Sprint2 09/10/2026: imagen de la API con arquitectura limpia (src/CampusBite.Api + sus capas)
 
-# Esta fase se usa cuando se ejecuta desde VS en modo rápido (valor predeterminado para la configuración de depuración)
+# Imagen base para ejecutar (también la usa Visual Studio en modo rápido)
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
-
-# Esta fase se usa para compilar el proyecto de servicio
+# Compilación: primero se copian solo los .csproj para aprovechar la caché de la restauración
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["CampusBite-Back.csproj", "."]
-RUN dotnet restore "./CampusBite-Back.csproj"
-COPY . .
-WORKDIR "/src/."
-RUN dotnet build "./CampusBite-Back.csproj" -c $BUILD_CONFIGURATION -o /app/build
+COPY ["src/CampusBite.Domain/CampusBite.Domain.csproj", "src/CampusBite.Domain/"]
+COPY ["src/CampusBite.Application/CampusBite.Application.csproj", "src/CampusBite.Application/"]
+COPY ["src/CampusBite.Infrastructure/CampusBite.Infrastructure.csproj", "src/CampusBite.Infrastructure/"]
+COPY ["src/CampusBite.Api/CampusBite.Api.csproj", "src/CampusBite.Api/"]
+RUN dotnet restore "src/CampusBite.Api/CampusBite.Api.csproj"
+COPY src/ src/
+RUN dotnet build "src/CampusBite.Api/CampusBite.Api.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
-# Esta fase se usa para publicar el proyecto de servicio que se copiará en la fase final.
+# Publicación
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./CampusBite-Back.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "src/CampusBite.Api/CampusBite.Api.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
-# Esta fase se usa en producción o cuando se ejecuta desde VS en modo normal (valor predeterminado cuando no se usa la configuración de depuración)
+# Imagen final (AssemblyName de la Api sigue siendo CampusBite-Back)
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
