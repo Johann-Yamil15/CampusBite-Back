@@ -1,10 +1,11 @@
-using System.Security.Claims;
 using CampusBite.Api.Common.Settings;
 using CampusBite.Application.Auth;
 using CampusBite.Application.Auth.Dtos;
+using CampusBite.Application.Common.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace CampusBite.Api.Auth;
 
@@ -15,10 +16,12 @@ namespace CampusBite.Api.Auth;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IUsuarioActual _usuarioActual;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IUsuarioActual usuarioActual)
     {
         _authService = authService;
+        _usuarioActual = usuarioActual;
     }
 
     // JJ-Sprint2 09/10/2026: registra un alumno y devuelve su token (inicia sesión de una vez)
@@ -52,14 +55,15 @@ public class AuthController : ControllerBase
     [HttpGet("me")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public IActionResult Me()
     {
+        // JY-Sprint2 10/10/2026: lee la sesión con IUsuarioActual (MapInboundClaims = false: claims "sub", "email", "role")
         return Ok(new
         {
-            Id = User.FindFirstValue(ClaimTypes.NameIdentifier),
-            Correo = User.FindFirstValue(ClaimTypes.Email),
-            Rol = User.FindFirstValue(ClaimTypes.Role)
+            Id = _usuarioActual.Id,
+            Correo = User.FindFirst(JwtRegisteredClaimNames.Email)?.Value,
+            Rol = _usuarioActual.Rol.ToString()
         });
     }
 }

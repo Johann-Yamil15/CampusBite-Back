@@ -17,7 +17,7 @@ src/
     Common/Exceptions/        NotFound, Conflict, Unauthorized, Forbidden, BusinessRule (sin HTTP)
   CampusBite.Application/     Casos de uso. Depende solo de Domain (sin EF, Npgsql, BCrypt ni ASP.NET).
     Auth/                     IAuthService, AuthService, IUsuarioRepository, Dtos/
-    Common/Security/          IPasswordHasher, ITokenService (contratos)
+    Common/Security/          IPasswordHasher, ITokenService, IUsuarioActual (contratos)
     DependencyInjection.cs    AddApplication(): registra los servicios de cada módulo
   CampusBite.Infrastructure/  Detalles técnicos que implementan los contratos de Application.
     Auth/                     UsuarioRepository (llama a los sp_* de la BD)
@@ -26,10 +26,13 @@ src/
     DependencyInjection.cs    AddInfrastructure(): BD, repositorios, BCrypt y JWT
   CampusBite.Api/             Capa web: controladores, middleware y Program.cs.
     Auth/                     AuthController
-    Common/                   Middleware (errores), Extensions (JWT, CORS, Swagger, límite de intentos), Settings
+    Common/Middleware/        ExceptionMiddleware y ProblemaHttp (formato único de errores)
+    Common/Security/          PoliticasAutorizacion (protección por rol) y UsuarioActual (quién llama, desde el JWT)
+    Common/                   Extensions (JWT, CORS, Swagger, límite de intentos), Settings
 tests/
   CampusBite.Application.Tests/  Pruebas de los servicios con dobles (sin base de datos)
-db/                           Esquema oficial de la BD con Liquibase (ver db/README.md)
+  CampusBite.Api.Tests/          Pruebas de integración de la API en memoria (JWT, roles, errores)
+db/                           Esquema oficial de la BD (ver db/README.md)
 ```
 
 **Regla de dependencias** (el compilador la hace cumplir): `Api → Application → Domain ← Infrastructure`, y `Api`
@@ -114,8 +117,50 @@ Se crea la misma carpeta `Cafeterias/` en cada capa que la necesite, de adentro 
 | 9 | Tests | `Cafeterias/CafeteriaServiceTests.cs` | Pruebas del servicio con un repositorio falso |
 
 - Errores de negocio: `throw new NotFoundException("...")`, `ConflictException`, `ForbiddenException`, etc.
-- Proteger un endpoint: `[Authorize]` o `[Authorize(Roles = "AdminSistema")]` (roles: `Alumno`, `AdminCafeteria`, `AdminSistema`).
+- Proteger un endpoint: ver [Protección de rutas por rol](#protección-de-rutas-por-rol-tec-07). Todo endpoint exige sesión salvo que diga `[AllowAnonymous]`.
 - Usa el módulo `Auth/` de cada capa como ejemplo a copiar.
+
+## Protección de rutas por rol (TEC-07)
+
+Todo pasa por el middleware de autenticación y autorización de ASP.NET Core (`UseAuthentication` y
+`UseAuthorization` en `Program.cs`), configurado en `Api/Common/Security/PoliticasAutorizacion.cs`.
+
+| Cómo se marca el endpoint | Quién entra |
+|---|---|
+| *(sin atributo)* | Cualquiera con sesión: **denegar por defecto**, un endpoint nuevo nunca queda público por olvido |
+| `[AllowAnonymous]` | Cualquiera, sin token (solo `registro` y `login`) |
+| `[Authorize(Policy = PoliticasAutorizacion.SoloAlumno)]` | `Alumno` (hace pedidos) |
+| `[Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]` | `AdminCafeteria` y `AdminSistema` (atienden pedidos) |
+| `[Authorize(Policy = PoliticasAutorizacion.SoloAdminSistema)]` | `AdminSistema` |
+
+```csharp
+[Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]
+[HttpPost("{idOrden:guid}/estado")]
+public async Task<IActionResult> CambiarEstado(Guid idOrden, CambiarEstadoDto dto, CancellationToken ct)
+{
+    await _ordenes.CambiarEstadoAsync(idOrden, dto.Estado, ct);   // el servicio toma el actor de IUsuarioActual
+    return NoContent();
+}
+```
+
+Reglas:
+- **Quién actúa sale del token, nunca de la petición.** Los servicios piden `IUsuarioActual` (Application) y le
+  pasan `Id` a los procedimientos como `p_id_usuario` / `p_id_actor`. No se acepta un `idUsuario` en el body, la
+  query o la ruta para decidir quién es.
+- **El rol del token es la primera barrera, la base de datos es la segunda.** Ser `AdminCafeteria` no basta para
+  tocar *cualquier* cafetería: los procedimientos revisan en la BD que el usuario siga activo, su rol actual y que
+  sea encargado de *esa* cafetería (`sp_exigir_gestor_cafeteria`). Si la BD responde `42501`, el repositorio lanza
+  `ForbiddenException` (403).
+- El token dura `Jwt__ExpirationMinutes`. Si a alguien se le quita un rol o se desactiva, el token que ya tiene
+  sigue pasando la primera barrera hasta que vence, pero la BD lo frena en cada procedimiento.
+- 401 (sin sesión o token vencido) y 403 (rol sin permiso) responden con ProblemDetails, igual que los demás errores.
+  Si el token venció, el `detail` lo dice y el encabezado `WWW-Authenticate` trae `invalid_token`: el front puede
+  mandar al login. No se explica por qué un token es inválido (firma, emisor): eso solo ayudaría a un atacante.
+
+| Código | Cuándo | Qué hacer en el front |
+|---|---|---|
+| 401 | Sin token, token inválido o vencido | Borrar la sesión y mandar al login |
+| 403 | Hay sesión, pero el rol (o la BD) no permite la acción | Mostrar el `detail`; no mandar al login |
 
 ## API de autenticación
 Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato ProblemDetails
@@ -125,7 +170,7 @@ Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato Pr
 |---|---|---|---|
 | `POST /api/auth/registro` | No | `nombre`, `correo`, `password`, `matricula?`, `telefono?` | 201 · 400 · 409 · 429 |
 | `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 429 |
-| `GET /api/auth/me` | Bearer | — | 200 · 401 |
+| `GET /api/auth/me` | Bearer (cualquier rol) | — | 200 · 401 |
 
 **Registro**: crea siempre un `Alumno` y ya devuelve el token, así que el front puede entrar directo sin pedir login.
 
