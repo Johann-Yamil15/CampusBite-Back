@@ -1,0 +1,7 @@
+# Módulo 05_vistas: consultas reutilizables que usan los procedimientos de 06_procedimientos.
+# La API no lee vistas directo (no tiene permiso): todo pasa por un sp_.
+# Cada archivo borra y crea su vista, así que se puede editar y volver a ejecutar.
+001_vw_menu_cafeteria.sql
+002_vw_metodos_pago_cafeteria.sql
+003_vw_cola_cafeteria.sql
+004_vw_mis_ordenes.sql

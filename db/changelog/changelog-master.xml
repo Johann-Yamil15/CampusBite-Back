@@ -1,90 +1,271 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Generado por db/consolidado/build_schema.sh a partir de los orden.txt. NO editar a mano. -->
 <databaseChangeLog
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                         http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
 
-    <!--
-      CampusBite · CAMPUS-11 (TEC-03) · Changelog maestro de Liquibase.
-      Cada changeSet ejecuta un script SQL de PostgreSQL (definido en TEC-02) y
-      declara su rollback. Regla: NUNCA editar un changeSet ya aplicado; los
-      cambios nuevos van en un changeSet nuevo (V004, V005, ...).
-      splitStatements=false: el archivo se envía completo, para que los cuerpos
-      de funciones ($$ ... $$) no se partan por los puntos y coma.
-    -->
+    <!-- Liquibase se usa solo en local (Docker). Los scripts son idempotentes: runOnChange vuelve a
+         ejecutar un script cuando cambia su contenido. Para revertir en local: docker compose down -v. -->
 
-    <changeSet id="V001-esquema-inicial" author="campusbite-db">
-        <comment>Extensión citext, ENUMs, 11 tablas, índices y catálogo de roles</comment>
-        <sqlFile path="migrations/V001__esquema_inicial.sql" relativeToChangelogFile="true"
-                 splitStatements="false" stripComments="false"/>
-        <rollback>
-            <sqlFile path="migrations/down/V001__esquema_inicial.down.sql" relativeToChangelogFile="true"
-                     splitStatements="false" stripComments="false"/>
-        </rollback>
+    <changeSet id="scripts/01_base/001_extensiones.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/01_base/001_extensiones.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 
-    <changeSet id="V002-logica-negocio" author="campusbite-db">
-        <comment>Triggers y procedimientos almacenados (sp_*)</comment>
-        <sqlFile path="migrations/V002__logica_negocio.sql" relativeToChangelogFile="true"
-                 splitStatements="false" stripComments="false"/>
-        <rollback>
-            <sqlFile path="migrations/down/V002__logica_negocio.down.sql" relativeToChangelogFile="true"
-                     splitStatements="false" stripComments="false"/>
-        </rollback>
+    <changeSet id="scripts/01_base/002_tipos.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/01_base/002_tipos.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 
-    <changeSet id="V003-vistas-y-seguridad" author="campusbite-db">
-        <comment>Vistas de consulta y permisos mínimos para app_backend</comment>
-        <sqlFile path="migrations/V003__vistas_y_seguridad.sql" relativeToChangelogFile="true"
-                 splitStatements="false" stripComments="false"/>
-        <rollback>
-            <sqlFile path="migrations/down/V003__vistas_y_seguridad.down.sql" relativeToChangelogFile="true"
-                     splitStatements="false" stripComments="false"/>
-        </rollback>
+    <changeSet id="scripts/01_base/003_rol_app_backend.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/01_base/003_rol_app_backend.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 
-    <changeSet id="V004-endurecimiento-seguridad" author="campusbite-db">
-        <comment>Permisos mínimos, límites del rol de la API, código de recogida seguro y lecturas con autorización</comment>
-        <sqlFile path="migrations/V004__endurecimiento_seguridad.sql" relativeToChangelogFile="true"
-                 splitStatements="false" stripComments="false"/>
-        <rollback>
-            <sqlFile path="migrations/down/V004__endurecimiento_seguridad.down.sql" relativeToChangelogFile="true"
-                     splitStatements="false" stripComments="false"/>
-        </rollback>
+    <changeSet id="scripts/02_tablas/001_rol.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/001_rol.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 
-    <changeSet id="V005-depuracion-indices" author="campusbite-db">
-        <comment>Elimina índices redundantes o sin uso comprobado</comment>
-        <sqlFile path="migrations/V005__depuracion_indices.sql" relativeToChangelogFile="true"
-                 splitStatements="false" stripComments="false"/>
-        <rollback>
-            <sqlFile path="migrations/down/V005__depuracion_indices.down.sql" relativeToChangelogFile="true"
-                     splitStatements="false" stripComments="false"/>
-        </rollback>
+    <changeSet id="scripts/02_tablas/002_usuario.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/002_usuario.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 
-    <!-- Login de la API en desarrollo (mínimo privilegio también en local). SOLO contexto dev. -->
-    <changeSet id="dev-login-app-backend" author="campusbite-db" context="dev" runOnChange="true">
-        <comment>Habilita LOGIN para app_backend con clave de desarrollo</comment>
-        <sql>ALTER ROLE app_backend WITH LOGIN PASSWORD 'app_backend_dev'</sql>
-        <rollback><sql>ALTER ROLE app_backend WITH NOLOGIN PASSWORD NULL</sql></rollback>
+    <changeSet id="scripts/02_tablas/003_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/003_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 
-    <!-- Datos de prueba: solo con el contexto "dev" (contexto dev). Nunca en producción. -->
-    <changeSet id="seed-dev-datos-prueba" author="campusbite-db" context="dev" runOnChange="true">
-        <comment>Usuarios, cafetería, horarios y menú de prueba (idempotente)</comment>
-        <sqlFile path="seeds/seed_dev.sql" relativeToChangelogFile="true"
-                 splitStatements="false" stripComments="false"/>
-        <rollback>
-            <sql>
-                DELETE FROM producto  WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
-                DELETE FROM categoria WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
-                DELETE FROM horario_cafeteria WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
-                DELETE FROM cafeteria WHERE id_cafeteria = '00000000-0000-0000-0000-0000000000c1';
-                DELETE FROM usuario WHERE id_usuario IN ('00000000-0000-0000-0000-0000000000a1',
-                    '00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3');
-            </sql>
-        </rollback>
+    <changeSet id="scripts/02_tablas/004_horario_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/004_horario_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/005_categoria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/005_categoria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/006_producto.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/006_producto.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/007_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/007_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/008_detalle_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/008_detalle_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/009_pago.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/009_pago.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/010_historial_estado_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/010_historial_estado_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/011_suscripcion_push.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/011_suscripcion_push.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/012_indices.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/012_indices.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/02_tablas/013_bitacora.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/02_tablas/013_bitacora.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/000_retirar_objetos_v1.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/000_retirar_objetos_v1.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/001_depurar_indices.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/001_depurar_indices.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/002_metodos_pago_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/002_metodos_pago_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/003_personal_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/003_personal_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/004_quitar_total_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/004_quitar_total_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/005_fechas.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/005_fechas.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint2/006_fechas_en_todas_las_tablas.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint2/006_fechas_en_todas_las_tablas.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/001_actualizado_en.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/001_actualizado_en.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/002_maquina_estados_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/002_maquina_estados_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/003_historial_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/003_historial_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/004_cancelar_pago.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/004_cancelar_pago.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/005_validar_detalle.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/005_validar_detalle.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/006_cafeteria_inmutable.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/006_cafeteria_inmutable.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/007_validar_monto_pago.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/007_validar_monto_pago.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/04_triggers/008_bitacora.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/008_bitacora.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/05_vistas/001_vw_menu_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/05_vistas/001_vw_menu_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/05_vistas/002_vw_metodos_pago_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/05_vistas/002_vw_metodos_pago_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/05_vistas/003_vw_cola_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/05_vistas/003_vw_cola_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/05_vistas/004_vw_mis_ordenes.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/05_vistas/004_vw_mis_ordenes.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/001_sp_exigir_gestor_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/001_sp_exigir_gestor_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/002_sp_registrar_usuario.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/002_sp_registrar_usuario.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/003_sp_obtener_credenciales.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/003_sp_obtener_credenciales.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/004_sp_menu_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/004_sp_menu_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/005_sp_crear_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/005_sp_crear_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/006_sp_confirmar_pago.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/006_sp_confirmar_pago.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/007_sp_cambiar_estado_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/007_sp_cambiar_estado_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/008_sp_cancelar_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/008_sp_cancelar_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/009_sp_entregar_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/009_sp_entregar_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/010_sp_mis_ordenes.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/010_sp_mis_ordenes.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/011_sp_cola_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/011_sp_cola_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/012_sp_bitacora_registro.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/012_sp_bitacora_registro.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/07_seguridad/001_privilegios.sql" author="campusbite" runAlways="true">
+        <sqlFile path="scripts/07_seguridad/001_privilegios.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/07_seguridad/002_limites_rol_api.sql" author="campusbite" runAlways="true">
+        <sqlFile path="scripts/07_seguridad/002_limites_rol_api.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/07_seguridad/003_rls.sql" author="campusbite" runAlways="true">
+        <sqlFile path="scripts/07_seguridad/003_rls.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/90_datos_dev/001_login_app_backend.sql" author="campusbite" runOnChange="true" context="dev">
+        <sqlFile path="scripts/90_datos_dev/001_login_app_backend.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/90_datos_dev/002_datos_prueba.sql" author="campusbite" runOnChange="true" context="dev">
+        <sqlFile path="scripts/90_datos_dev/002_datos_prueba.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
     </changeSet>
 </databaseChangeLog>

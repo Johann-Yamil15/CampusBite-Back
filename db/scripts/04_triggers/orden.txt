@@ -1,0 +1,12 @@
+# Módulo 04_triggers: reglas que la base hace cumplir sola.
+# PostgreSQL exige que un trigger ejecute una FUNCTION que devuelve "trigger" (no puede ser PROCEDURE),
+# por eso aquí se usa el prefijo fn_. Lo que llama la API está en 06_procedimientos (sp_).
+# Todo es CREATE OR REPLACE: estos archivos sí se pueden editar y volver a ejecutar.
+001_actualizado_en.sql
+002_maquina_estados_orden.sql
+003_historial_orden.sql
+004_cancelar_pago.sql
+005_validar_detalle.sql
+006_cafeteria_inmutable.sql
+007_validar_monto_pago.sql
+008_bitacora.sql
