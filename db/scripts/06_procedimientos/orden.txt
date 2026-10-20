@@ -26,3 +26,11 @@
 010_sp_mis_ordenes.sql
 011_sp_cola_cafeteria.sql
 012_sp_bitacora_registro.sql
+# TEC-08 (Sprint 3): CRUD de cafeterías
+013_sp_exigir_admin_sistema.sql
+014_sp_validar_datos_cafeteria.sql
+015_sp_listar_cafeterias.sql
+016_sp_obtener_cafeteria.sql
+017_sp_crear_cafeteria.sql
+018_sp_actualizar_cafeteria.sql
+019_sp_cambiar_activa_cafeteria.sql

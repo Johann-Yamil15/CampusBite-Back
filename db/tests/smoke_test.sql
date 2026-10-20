@@ -52,8 +52,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 12, format('Se esperaban 12 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 12 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 19, format('Se esperaban 19 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 19 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
@@ -377,5 +377,93 @@ BEGIN
   RAISE NOTICE 'OK 20: fecha de creación en todas las tablas; bitácora con alta, cambio, autor y sin contraseñas';
 END $$;
 
+-- 21. CRUD de cafeterías (TEC-08) --------------------------------------------------
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_admin   UUID := '00000000-0000-0000-0000-0000000000a2';     -- encargado de c1
+  c_sistema UUID := '00000000-0000-0000-0000-0000000000a3';
+  c_cafe    UUID := '00000000-0000-0000-0000-0000000000c1';
+  v_id      UUID;
+  v_otro    UUID;
+  v_json    JSONB;
+  v_ok      BOOLEAN;
+BEGIN
+  SET LOCAL ROLE app_backend;
+
+  -- Crear: solo admin_sistema; nombre con espacios se recorta; métodos repetidos se guardan una vez
+  v_ok := false;
+  BEGIN CALL sp_crear_cafeteria(c_admin, 'Cafetería Norte', 'Edificio K', true, 'Ventanilla 2',
+                                ARRAY['efectivo']::metodo_pago[], v_id);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Un encargado no debe crear cafeterías';
+  CALL sp_crear_cafeteria(c_sistema, '  Cafetería Norte ', 'Edificio K', true, 'Ventanilla 2',
+                          ARRAY['efectivo','tarjeta','efectivo']::metodo_pago[], v_id);
+  CALL sp_obtener_cafeteria(v_id, c_alumno, v_json);
+  ASSERT v_json->>'nombre' = 'Cafetería Norte', 'El nombre debe guardarse sin espacios extra';
+  ASSERT jsonb_array_length(v_json->'metodos_pago') = 2, 'Los métodos repetidos se guardan una vez';
+
+  -- Nombre repetido sin distinguir mayúsculas y datos inválidos
+  v_ok := false;
+  BEGIN CALL sp_crear_cafeteria(c_sistema, 'CAFETERÍA NORTE', 'Otro', false, 'Puerta', ARRAY['efectivo']::metodo_pago[], v_otro);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Un nombre repetido debió rechazarse con 23505';
+  v_ok := false;
+  BEGIN CALL sp_crear_cafeteria(c_sistema, 'Sin Métodos', 'Edificio Z', true, 'Puerta', '{}'::metodo_pago[], v_id);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una cafetería sin métodos de pago debió rechazarse';
+
+  -- Editar: su encargado sí (c1), un alumno no, otro encargado tampoco (cafetería nueva)
+  CALL sp_actualizar_cafeteria(c_cafe, c_admin, 'Cafetería Central (prueba)', 'Edificio principal', true, 'Puerta 3',
+                               ARRAY['efectivo']::metodo_pago[]);
+  CALL sp_obtener_cafeteria(c_cafe, c_admin, v_json);
+  ASSERT v_json->>'punto_entrega' = 'Puerta 3' AND v_json->'metodos_pago' = '["efectivo"]'::jsonb,
+         'El encargado debe poder editar su cafetería y sus métodos';
+  v_ok := false;
+  BEGIN CALL sp_actualizar_cafeteria(c_cafe, c_alumno, 'X Y', 'Z', true, 'W', ARRAY['efectivo']::metodo_pago[]);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Un alumno no debe editar cafeterías';
+  v_ok := false;
+  BEGIN CALL sp_actualizar_cafeteria(v_id, c_admin, 'Cafetería Norte', 'Edificio K', true, 'V', ARRAY['efectivo']::metodo_pago[]);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Un encargado no debe editar una cafetería que no es suya';
+  v_ok := false;
+  BEGIN CALL sp_actualizar_cafeteria(gen_random_uuid(), c_sistema, 'X Y', 'Z', true, 'W', ARRAY['efectivo']::metodo_pago[]);
+  EXCEPTION WHEN no_data_found THEN v_ok := true; END;
+  ASSERT v_ok, 'Editar una cafetería inexistente debe dar no_data_found';
+
+  -- Baja lógica: no con órdenes en curso; sí sin ellas; la inactiva se oculta a quien no la administra
+  v_ok := false;
+  BEGIN CALL sp_cambiar_activa_cafeteria(c_cafe, false, c_sistema);
+  EXCEPTION WHEN object_in_use THEN v_ok := true; END;
+  ASSERT v_ok, 'No se debe desactivar una cafetería con órdenes en curso';
+  v_ok := false;
+  BEGIN CALL sp_cambiar_activa_cafeteria(v_id, false, c_admin);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Solo admin_sistema puede desactivar';
+  CALL sp_cambiar_activa_cafeteria(v_id, false, c_sistema);
+  CALL sp_cambiar_activa_cafeteria(v_id, false, c_sistema);            -- repetir no es error
+  CALL sp_obtener_cafeteria(v_id, c_alumno, v_json);
+  ASSERT v_json IS NULL, 'Una cafetería inactiva no debe verse para un alumno';
+  CALL sp_obtener_cafeteria(v_id, c_sistema, v_json);
+  ASSERT (v_json->>'activa')::boolean = false, 'admin_sistema sí ve la inactiva';
+  CALL sp_listar_cafeterias(c_alumno, false, v_json);
+  ASSERT NOT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'La lista normal no trae inactivas';
+  v_ok := false;
+  BEGIN CALL sp_listar_cafeterias(c_alumno, true, v_json);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Solo admin_sistema lista inactivas';
+  CALL sp_listar_cafeterias(c_sistema, true, v_json);
+  ASSERT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'admin_sistema lista inactivas';
+  CALL sp_cambiar_activa_cafeteria(v_id, true, c_sistema);
+  CALL sp_obtener_cafeteria(v_id, c_alumno, v_json);
+  ASSERT (v_json->>'activa')::boolean, 'Reactivada vuelve a verse';
+  RESET ROLE;
+
+  ASSERT (SELECT b.cambiado_por FROM bitacora b WHERE b.tabla = 'cafeteria' AND b.id_registro = v_id::text
+           AND b.operacion = 'I') = c_sistema, 'La bitácora debe registrar quién creó la cafetería';
+  RAISE NOTICE 'OK 21: CRUD de cafeterías con permisos, nombre único, baja lógica protegida y bitácora';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 20 de 20 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 21 de 21 OK (transacción revertida)'

@@ -2,9 +2,7 @@ using CampusBite.Application.Auth;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Common.Exceptions;
 using CampusBite.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
-using Npgsql;
-using NpgsqlTypes;
+using static CampusBite.Infrastructure.Persistence.Procedimientos;
 
 namespace CampusBite.Infrastructure.Auth;
 
@@ -12,6 +10,7 @@ namespace CampusBite.Infrastructure.Auth;
 // traduce los errores de PostgreSQL a excepciones del dominio para que Application no conozca Npgsql
 // JY-Sprint2 09/10/2026: los sp_* ahora son PROCEDURE: se llaman con CALL, pasando NULL en los parámetros OUT,
 // y PostgreSQL devuelve una fila con sus valores. SqlQuery de EF no sirve aquí (envuelve el SQL en un SELECT)
+// JY-Sprint3 20/10/2026: la ejecución del CALL y la traducción de errores pasaron a Persistence/Procedimientos.cs
 public class UsuarioRepository : IUsuarioRepository
 {
     private readonly AppDbContext _context;
@@ -27,18 +26,18 @@ public class UsuarioRepository : IUsuarioRepository
     {
         try
         {
-            return await EjecutarAsync(
+            return await _context.EjecutarAsync(
                 "CALL sp_registrar_usuario(@nombre, @correo, @hash, @matricula, @telefono, NULL)",
                 [Texto("nombre", nombre), Texto("correo", correo), Texto("hash", contrasenaHash),
                  Texto("matricula", matricula), Texto("telefono", telefono)],
                 fila => fila.GetGuid(0),
                 cancellationToken);
         }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        catch (ConflictException)
         {
             throw new ConflictException("El correo o la matrícula ya están registrados.");
         }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.CheckViolation)
+        catch (BusinessRuleException)
         {
             throw new BusinessRuleException("Los datos no cumplen el formato requerido (nombre, correo o teléfono).");
         }
@@ -47,7 +46,7 @@ public class UsuarioRepository : IUsuarioRepository
     public Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default)
     {
         // Si el correo no existe, los cuatro OUT regresan NULL
-        return EjecutarAsync(
+        return _context.EjecutarAsync(
             "CALL sp_obtener_credenciales(@correo, NULL, NULL, NULL, NULL)",
             [Texto("correo", correo)],
             fila => fila.IsDBNull(0)
@@ -60,28 +59,5 @@ public class UsuarioRepository : IUsuarioRepository
                     Activo = fila.GetBoolean(3)
                 },
             cancellationToken);
-    }
-
-    private static NpgsqlParameter Texto(string nombre, string? valor) =>
-        new(nombre, NpgsqlDbType.Varchar) { Value = (object?)valor ?? DBNull.Value };
-
-    // Ejecuta un CALL y lee la única fila con los parámetros OUT, usando la conexión del DbContext
-    private async Task<T> EjecutarAsync<T>(
-        string sql, NpgsqlParameter[] parametros, Func<NpgsqlDataReader, T> leer, CancellationToken cancellationToken)
-    {
-        var conexion = (NpgsqlConnection)_context.Database.GetDbConnection();
-        await _context.Database.OpenConnectionAsync(cancellationToken);
-        try
-        {
-            await using var comando = new NpgsqlCommand(sql, conexion);
-            comando.Parameters.AddRange(parametros);
-            await using var fila = await comando.ExecuteReaderAsync(cancellationToken);
-            await fila.ReadAsync(cancellationToken);
-            return leer(fila);
-        }
-        finally
-        {
-            await _context.Database.CloseConnectionAsync();
-        }
     }
 }

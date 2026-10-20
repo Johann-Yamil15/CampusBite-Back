@@ -9,6 +9,7 @@
 scripts/01_base
 scripts/02_tablas
 scripts/03_cambios_sprint2
+scripts/03_cambios_sprint3
 scripts/04_triggers
 scripts/05_vistas
 scripts/06_procedimientos

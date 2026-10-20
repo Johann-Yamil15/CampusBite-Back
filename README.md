@@ -14,18 +14,22 @@ CampusBite-Back.sln
 src/
   CampusBite.Domain/          Núcleo del negocio. No depende de nada.
     Auth/                     RolUsuario
+    Cafeterias/               MetodoPago
     Common/Exceptions/        NotFound, Conflict, Unauthorized, Forbidden, BusinessRule (sin HTTP)
   CampusBite.Application/     Casos de uso. Depende solo de Domain (sin EF, Npgsql, BCrypt ni ASP.NET).
     Auth/                     IAuthService, AuthService, IUsuarioRepository, Dtos/
+    Cafeterias/               ICafeteriaService, CafeteriaService, ICafeteriaRepository, DatosCafeteria, Dtos/
     Common/Security/          IPasswordHasher, ITokenService, IUsuarioActual (contratos)
     DependencyInjection.cs    AddApplication(): registra los servicios de cada módulo
   CampusBite.Infrastructure/  Detalles técnicos que implementan los contratos de Application.
     Auth/                     UsuarioRepository (llama a los sp_* de la BD)
-    Persistence/              AppDbContext (conexión a PostgreSQL)
+    Cafeterias/               CafeteriaRepository
+    Persistence/              AppDbContext y Procedimientos (CALL a los sp_*, lectura de JSON y traducción de errores)
     Security/                 BCryptPasswordHasher, TokenService (JWT), JwtSettings
     DependencyInjection.cs    AddInfrastructure(): BD, repositorios, BCrypt y JWT
   CampusBite.Api/             Capa web: controladores, middleware y Program.cs.
     Auth/                     AuthController
+    Cafeterias/               CafeteriasController
     Common/Middleware/        ExceptionMiddleware y ProblemaHttp (formato único de errores)
     Common/Security/          PoliticasAutorizacion (protección por rol) y UsuarioActual (quién llama, desde el JWT)
     Common/                   Extensions (JWT, CORS, Swagger, límite de intentos), Settings
@@ -97,6 +101,11 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero; máximo 100 por página |
 | `CALL sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo el encargado o `admin_sistema` (error `42501` si no) |
 | `CALL sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro (qué cambió, quién y cuándo). Solo `admin_sistema` |
+| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | Cafeterías por nombre; las inactivas solo `admin_sistema` |
+| `CALL sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | Una cafetería; `NULL` si no existe o es inactiva y el actor no la administra |
+| `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
+| `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
+| `CALL sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | Baja lógica o reactivación. Solo `admin_sistema`. Con órdenes en curso → `55006` |
 
 Al cancelar una orden, su pago pasa solo a `reembolsado` (si ya estaba pagado) o `cancelado`.
 Las vistas `vw_*` existen, pero solo las usan los procedimientos: la API no tiene permiso para leerlas.
@@ -104,7 +113,8 @@ Las vistas `vw_*` existen, pero solo las usan los procedimientos: la API no tien
 Lo que no aparece aquí (por ejemplo, el CRUD de cafeterías y productos, el perfil del usuario o las suscripciones push) todavía no tiene procedimiento: hay que agregarlo en un script nuevo.
 
 ## Agregar un módulo nuevo (ej. Cafeterías)
-Se crea la misma carpeta `Cafeterias/` en cada capa que la necesite, de adentro hacia afuera:
+`Cafeterias/` (TEC-08) ya está hecho siguiendo estos pasos: úsalo como ejemplo completo de CRUD.
+Se crea la misma carpeta en cada capa que la necesite, de adentro hacia afuera:
 
 | # | Capa | Archivo | Qué contiene |
 |---|---|---|---|
@@ -113,14 +123,15 @@ Se crea la misma carpeta `Cafeterias/` en cada capa que la necesite, de adentro 
 | 3 | Application | `Cafeterias/ICafeteriaRepository.cs` + la clase de lo que devuelve | Qué datos necesita el módulo (sin SQL) |
 | 4 | Application | `Cafeterias/ICafeteriaService.cs` + `CafeteriaService.cs` | Reglas del negocio; usa el repositorio |
 | 5 | Application | `DependencyInjection.cs` | `services.AddScoped<ICafeteriaService, CafeteriaService>();` |
-| 6 | Infrastructure | `Cafeterias/CafeteriaRepository.cs` | SQL sobre los `sp_*` o `vw_*`; traduce errores de PostgreSQL a excepciones de Domain |
+| 6 | Infrastructure | `Cafeterias/CafeteriaRepository.cs` | `CALL` a los `sp_*` con `_context.EjecutarAsync(...)` (`Persistence/Procedimientos.cs`), que ya traduce los errores de PostgreSQL a excepciones de Domain |
 | 7 | Infrastructure | `DependencyInjection.cs` | `services.AddScoped<ICafeteriaRepository, CafeteriaRepository>();` |
 | 8 | Api | `Cafeterias/CafeteriasController.cs` | Recibe `ICafeteriaService` por constructor; pasa el `CancellationToken` |
-| 9 | Tests | `Cafeterias/CafeteriaServiceTests.cs` | Pruebas del servicio con un repositorio falso |
+| 9 | Tests | `Cafeterias/CafeteriaServiceTests.cs` y `Api.Tests/Cafeterias/` | Servicio con un repositorio falso; endpoints (roles, validación, errores) con un servicio falso |
+| 0 | BD | `db/scripts/06_procedimientos/NNN_sp_*.sql` | Los procedimientos, su `GRANT` en `07_seguridad/001_privilegios.sql` y una prueba en `db/tests/smoke_test.sql` |
 
 - Errores de negocio: `throw new NotFoundException("...")`, `ConflictException`, `ForbiddenException`, etc.
 - Proteger un endpoint: ver [Protección de rutas por rol](#protección-de-rutas-por-rol-tec-07). Todo endpoint exige sesión salvo que diga `[AllowAnonymous]`.
-- Usa el módulo `Auth/` de cada capa como ejemplo a copiar.
+- Usa el módulo `Cafeterias/` de cada capa como ejemplo a copiar.
 
 ## Protección de rutas por rol (TEC-07)
 
@@ -163,6 +174,42 @@ Reglas:
 |---|---|---|
 | 401 | Sin token, token inválido o vencido | Borrar la sesión y mandar al login |
 | 403 | Hay sesión, pero el rol (o la BD) no permite la acción | Mostrar el `detail`; no mandar al login |
+
+## API de cafeterías (TEC-08)
+Base: `/api/cafeterias`. Todas piden sesión. "Eliminar" es una **baja lógica**: la cafetería deja de aparecer y de
+aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se puede reactivar.
+
+| Método y ruta | Quién | Cuerpo | Respuestas |
+|---|---|---|---|
+| `GET /api/cafeterias` | Cualquier rol (solo activas) | — | 200 · 401 |
+| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 401 · 403 |
+| `GET /api/cafeterias/{id}` | Cualquier rol; una inactiva solo su encargado y `AdminSistema` (los demás reciben 404) | — | 200 · 401 · 404 |
+| `POST /api/cafeterias` | `AdminSistema` | `GuardarCafeteriaDto` | 201 (+ `Location`) · 400 · 401 · 403 · 409 |
+| `PUT /api/cafeterias/{id}` | Su encargado (`AdminCafeteria` de **esa** cafetería) o `AdminSistema` | `GuardarCafeteriaDto` | 200 · 400 · 401 · 403 · 404 · 409 |
+| `DELETE /api/cafeterias/{id}` | `AdminSistema` | — | 204 · 401 · 403 · 404 · 409 |
+| `POST /api/cafeterias/{id}/reactivar` | `AdminSistema` | — | 204 · 401 · 403 · 404 |
+
+```json
+// POST y PUT: GuardarCafeteriaDto
+{ "nombre": "Cafetería Norte", "ubicacion": "Edificio K, planta baja", "esDelCampus": true,
+  "puntoEntrega": "Ventanilla 2", "metodosPago": ["Efectivo", "Tarjeta"] }
+
+// Respuesta (lista, detalle, POST y PUT)
+{ "idCafeteria": "…", "nombre": "Cafetería Norte", "ubicacion": "Edificio K, planta baja", "esDelCampus": true,
+  "puntoEntrega": "Ventanilla 2", "activa": true, "metodosPago": ["Tarjeta", "Efectivo"],
+  "creadoEn": "2026-10-20T16:00:00+00:00", "actualizadoEn": "2026-10-20T16:00:00+00:00" }
+```
+
+| Código | Cuándo |
+|---|---|
+| 400 | Datos inválidos: nombre de 2 a 100, ubicación (máx. 150) y punto de entrega (máx. 100) obligatorios, `esDelCampus` obligatorio, al menos un método de pago (`Tarjeta`, `Transferencia`, `Efectivo`) |
+| 403 | El rol no puede hacer la acción, o es encargado de **otra** cafetería |
+| 404 | No existe, o es inactiva y no la administras |
+| 409 | Ya existe una cafetería con ese nombre (sin distinguir mayúsculas), o se intenta desactivar con órdenes en curso |
+
+- Los métodos de pago se envían y se reciben como texto; un número o un método que no existe da 400.
+- `PUT` reemplaza los métodos de pago por la lista enviada. No cambia `activa`: para eso están `DELETE` y `reactivar`.
+- Desactivar o reactivar dos veces no es error.
 
 ## API de autenticación
 Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato ProblemDetails

@@ -5,3 +5,4 @@
 002_vw_metodos_pago_cafeteria.sql
 003_vw_cola_cafeteria.sql
 004_vw_mis_ordenes.sql
+005_vw_cafeteria.sql

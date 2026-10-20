@@ -23,9 +23,14 @@ GRANT EXECUTE ON PROCEDURE
   sp_entregar_orden,
   sp_mis_ordenes,
   sp_cola_cafeteria,
-  sp_bitacora_registro
+  sp_bitacora_registro,
+  sp_listar_cafeterias,
+  sp_obtener_cafeteria,
+  sp_crear_cafeteria,
+  sp_actualizar_cafeteria,
+  sp_cambiar_activa_cafeteria
 TO app_backend;
--- sp_exigir_gestor_cafeteria es interno: no se le da a app_backend.
+-- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria.
 
 -- Nadie entra a la base sin permiso explícito. Si quien ejecuta no es dueño de la base, solo se avisa.
 DO $$

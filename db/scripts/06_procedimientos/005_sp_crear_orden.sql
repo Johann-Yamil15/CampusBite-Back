@@ -26,7 +26,10 @@ BEGIN
     RAISE EXCEPTION 'Usuario no válido para realizar órdenes';
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM cafeteria c WHERE c.id_cafeteria = p_id_cafeteria AND c.activa) THEN
+  -- FOR SHARE (JY-Sprint3 20/10/2026): si un admin está desactivando esta cafetería, la orden espera y vuelve a
+  -- revisar "activa"; y la baja espera a que terminen las órdenes en proceso (sp_cambiar_activa_cafeteria).
+  PERFORM 1 FROM cafeteria c WHERE c.id_cafeteria = p_id_cafeteria AND c.activa FOR SHARE;
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'La cafetería no existe o no está activa';
   END IF;
 

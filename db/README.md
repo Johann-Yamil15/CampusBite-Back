@@ -25,7 +25,7 @@ db/
     versiones/               campusbite_V1.0.0.NNN.sql (local) y campusbite_V1.0.0.NNN_prod.sql (producción)
     historial.txt            una línea por versión (lo escribe build_schema.sh)
   changelog/changelog-master.xml   generado por build_schema.sh (no editar)
-  tests/smoke_test.sql       20 verificaciones; termina en ROLLBACK
+  tests/smoke_test.sql       21 verificaciones; termina en ROLLBACK
   docker-compose.yml         PostgreSQL 16 + Liquibase (local)
   00_crear_base_datos.sql    solo para PostgreSQL instalado a mano
 ```
@@ -88,6 +88,20 @@ valores. Las listas llegan como `JSONB`. Ejemplo en .NET: `src/CampusBite.Infras
 | `sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero, máximo 100 por página |
 | `sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo su encargado o `admin_sistema` (`42501` si no) |
 | `sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro, el más reciente primero. Solo `admin_sistema` |
+| `sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | TEC-08. Por nombre; las inactivas solo `admin_sistema` |
+| `sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | TEC-08. `NULL` si no existe o es inactiva y el actor no la administra |
+| `sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | TEC-08. Solo `admin_sistema`. Nombre repetido (sin distinguir mayúsculas) → `23505` |
+| `sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | TEC-08. Su encargado o `admin_sistema`; reemplaza los métodos de pago |
+| `sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | TEC-08. Baja lógica o reactivación, solo `admin_sistema`. Con órdenes en curso → `55006` |
+
+**Errores que lanzan los procedimientos** (la API los traduce en `Infrastructure/Persistence/Procedimientos.cs`):
+`42501` → 403, `P0002` (`no_data_found`) → 404, `23505` y `55006` (`object_in_use`) → 409, `23514` y `P0001` → 400.
+El mensaje se muestra al usuario solo si lo escribió un `RAISE` nuestro; los errores internos de PostgreSQL llevan un
+texto genérico, porque el suyo trae nombres de tablas y restricciones.
+
+**Concurrencia en la baja de una cafetería:** `sp_crear_orden` toma la cafetería con `FOR SHARE` y
+`sp_cambiar_activa_cafeteria` con `FOR UPDATE`. Si coinciden, una espera a la otra: no se puede crear una orden en una
+cafetería que se está desactivando, ni desactivarla con una orden a medio crear.
 
 `sp_exigir_gestor_cafeteria` es interno (lo usan otros procedimientos) y la API no lo puede ejecutar.
 
