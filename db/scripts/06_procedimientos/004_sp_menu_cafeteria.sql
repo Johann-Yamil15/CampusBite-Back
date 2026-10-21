@@ -1,6 +1,9 @@
--- JY-Sprint2 09/10/2026: menú de una cafetería activa (o de todas si p_id_cafeteria es NULL), con sus métodos
--- de pago. Reemplaza la lectura directa de vw_menu_cafeteria que tenía la API.
---   CALL sp_menu_cafeteria(NULL, NULL);
+-- JY-Sprint2 09/10/2026: menú de una cafetería activa, con sus métodos de pago. Reemplaza la lectura directa
+-- de vw_menu_cafeteria que tenía la API.
+--   CALL sp_menu_cafeteria(<id_cafeteria>, NULL);
+-- JY-Sprint3 20/10/2026: la cafetería es obligatoria. Con NULL devolvía TODAS con TODOS sus productos: las pruebas
+-- de estrés midieron 3 s y 29 MB con 10 mil cafeterías. Para ver todas está sp_listar_cafeterias (paginado).
+-- Devuelve un arreglo de 0 o 1 elementos (vacío si no existe o está inactiva).
 -- p_menu: [{"id_cafeteria", "cafeteria", "es_del_campus", "punto_entrega", "metodos_pago": [...],
 --           "productos": [{"id_producto", "producto", "categoria", "descripcion", "precio", "imagen_url"}]}]
 CREATE OR REPLACE PROCEDURE sp_menu_cafeteria(
@@ -9,6 +12,10 @@ CREATE OR REPLACE PROCEDURE sp_menu_cafeteria(
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
+  IF p_id_cafeteria IS NULL THEN
+    RAISE EXCEPTION 'Indica la cafetería del menú' USING ERRCODE = 'check_violation';
+  END IF;
+
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
            'id_cafeteria',  c.id_cafeteria,
            'cafeteria',     c.nombre,
@@ -33,5 +40,5 @@ BEGIN
        WHERE m.id_cafeteria = c.id_cafeteria
     ) pr ON true
    WHERE c.activa
-     AND (p_id_cafeteria IS NULL OR c.id_cafeteria = p_id_cafeteria);
+     AND c.id_cafeteria = p_id_cafeteria;
 END $$;

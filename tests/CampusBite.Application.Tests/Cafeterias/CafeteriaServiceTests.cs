@@ -1,5 +1,6 @@
 using CampusBite.Application.Cafeterias;
 using CampusBite.Application.Cafeterias.Dtos;
+using CampusBite.Application.Common.Dtos;
 using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Cafeterias;
@@ -53,7 +54,8 @@ public class CafeteriaServiceTests
     [Fact]
     public async Task Obtener_SiNoExisteOEstaOculta_LanzaNotFound()
     {
-        await Assert.ThrowsAsync<NotFoundException>(() => _servicio.ObtenerAsync(Guid.NewGuid()));
+        var error = await Assert.ThrowsAsync<NotFoundException>(() => _servicio.ObtenerAsync(Guid.NewGuid()));
+        Assert.Equal("La cafetería no existe.", error.Message);   // el front muestra este texto
     }
 
     [Theory]
@@ -63,7 +65,8 @@ public class CafeteriaServiceTests
     {
         _usuario.Rol = rol;
 
-        await Assert.ThrowsAsync<ForbiddenException>(() => _servicio.ListarAsync(incluirInactivas: true));
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() => _servicio.ListarAsync(new ListarCafeteriasDto { IncluirInactivas = true }));
+        Assert.Equal("Solo el administrador del sistema puede ver cafeterías inactivas.", error.Message);
         Assert.Equal(0, _repositorio.Llamadas);
     }
 
@@ -72,9 +75,48 @@ public class CafeteriaServiceTests
     {
         _usuario.Rol = RolUsuario.Alumno;
 
-        await _servicio.ListarAsync(incluirInactivas: false);
+        await _servicio.ListarAsync(new ListarCafeteriasDto());
 
-        Assert.Equal((_usuario.Id, false), _repositorio.UltimoListado);
+        Assert.Equal((_usuario.Id, false, (string?)null, 20, 0), _repositorio.UltimoListado);
+    }
+
+    [Theory]
+    [InlineData(1, 20, 0)]
+    [InlineData(3, 20, 40)]
+    [InlineData(2, 100, 100)]
+    public async Task Listar_ConviertePaginaEnDesplazamiento(int pagina, int tamano, int desplazamiento)
+    {
+        await _servicio.ListarAsync(new ListarCafeteriasDto { Pagina = pagina, Tamano = tamano });
+
+        Assert.Equal(tamano, _repositorio.UltimoListado!.Value.Limite);
+        Assert.Equal(desplazamiento, _repositorio.UltimoListado!.Value.Desplazamiento);
+    }
+
+    [Theory]
+    [InlineData("  norte ", "norte")]
+    [InlineData("   ", null)]
+    [InlineData(null, null)]
+    public async Task Listar_LimpiaLaBusqueda(string? buscar, string? esperado)
+    {
+        await _servicio.ListarAsync(new ListarCafeteriasDto { Buscar = buscar });
+
+        Assert.Equal(esperado, _repositorio.UltimoListado!.Value.Buscar);
+    }
+
+    [Fact]
+    public async Task Listar_ArmaLaPaginaConElTotalDeLaBD()
+    {
+        _repositorio.Agregar("A");
+        _repositorio.Agregar("B");
+        _repositorio.TotalSimulado = 45;
+
+        var pagina = await _servicio.ListarAsync(new ListarCafeteriasDto { Pagina = 2, Tamano = 20 });
+
+        Assert.Equal(2, pagina.Elementos.Count);
+        Assert.Equal(45, pagina.Total);
+        Assert.Equal(2, pagina.Pagina);
+        Assert.Equal(20, pagina.Tamano);
+        Assert.Equal(3, pagina.TotalPaginas);
     }
 
     [Fact]
@@ -112,7 +154,8 @@ public class FakeCafeteriaRepository : ICafeteriaRepository
     public int Llamadas { get; private set; }
     public (Guid Actor, DatosCafeteria Datos)? UltimaCreacion { get; private set; }
     public (Guid Id, Guid Actor)? UltimaActualizacion { get; private set; }
-    public (Guid Actor, bool Inactivas)? UltimoListado { get; private set; }
+    public (Guid Actor, bool Inactivas, string? Buscar, int Limite, int Desplazamiento)? UltimoListado { get; private set; }
+    public int TotalSimulado { get; set; }
     public (Guid Id, bool Activa, Guid Actor)? UltimoCambioActiva { get; private set; }
 
     public Guid Agregar(string nombre)
@@ -122,11 +165,12 @@ public class FakeCafeteriaRepository : ICafeteriaRepository
         return id;
     }
 
-    public Task<IReadOnlyList<CafeteriaDto>> ListarAsync(Guid idActor, bool incluirInactivas, CancellationToken cancellationToken = default)
+    public Task<(IReadOnlyList<CafeteriaDto> Cafeterias, int Total)> ListarAsync(
+        Guid idActor, bool incluirInactivas, string? buscar, int limite, int desplazamiento, CancellationToken cancellationToken = default)
     {
         Registrar();
-        UltimoListado = (idActor, incluirInactivas);
-        return Task.FromResult<IReadOnlyList<CafeteriaDto>>(_cafeterias.Values.ToList());
+        UltimoListado = (idActor, incluirInactivas, buscar, limite, desplazamiento);
+        return Task.FromResult<(IReadOnlyList<CafeteriaDto>, int)>((_cafeterias.Values.ToList(), TotalSimulado));
     }
 
     public Task<CafeteriaDto?> ObtenerAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)

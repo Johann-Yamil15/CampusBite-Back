@@ -59,6 +59,7 @@ public class ProteccionDeRutasTests : IClassFixture<ApiDePrueba>
         var problema = await respuesta.Content.ReadFromJsonAsync<ProblemDetails>();
         Assert.Equal("Unauthorized", problema?.Title);
         Assert.Equal("Necesitas iniciar sesión para usar este recurso.", problema?.Detail);
+        Assert.Equal("Bearer", respuesta.Headers.WwwAuthenticate.ToString());   // sin token: no es "token inválido"
     }
 
     [Fact]
@@ -70,6 +71,7 @@ public class ProteccionDeRutasTests : IClassFixture<ApiDePrueba>
         Assert.Equal("application/problem+json", respuesta.Content.Headers.ContentType?.MediaType);
         var problema = await respuesta.Content.ReadFromJsonAsync<ProblemDetails>();
         Assert.Equal("Forbidden", problema?.Title);
+        Assert.Equal("Tu rol no tiene permiso para usar este recurso.", problema?.Detail);
     }
 
     [Fact]
@@ -94,6 +96,49 @@ public class ProteccionDeRutasTests : IClassFixture<ApiDePrueba>
         var respuesta = await _api.ClienteConToken(token).GetAsync("/pruebas/admin");
 
         Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+    }
+
+    // JY-Sprint3 20/10/2026: las pruebas de mutación mostraron que nada revisaba el emisor ni la audiencia:
+    // un token de otro sistema firmado con la misma llave habría entrado
+    [Theory]
+    [InlineData("OtroSistema", ApiDePrueba.Audiencia)]
+    [InlineData(ApiDePrueba.Emisor, "OtraApp")]
+    public async Task Token_de_otro_emisor_o_audiencia_se_rechaza(string emisor, string audiencia)
+    {
+        var token = ApiDePrueba.TokenManual(nameof(RolUsuario.AdminSistema), DateTime.UtcNow.AddHours(1),
+            emisor: emisor, audiencia: audiencia);
+
+        var respuesta = await _api.ClienteConToken(token).GetAsync("/pruebas/admin");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+    }
+
+    // IUsuarioActual acepta solo el rol escrito exactamente como el enum, igual que las políticas: un rol que no
+    // existe ("99") o con otras mayúsculas ("alumno") no es una sesión válida, aunque la firma sea correcta
+    [Theory]
+    [InlineData("99")]
+    [InlineData("alumno")]
+    public async Task Rol_que_no_es_exactamente_del_enum_invalida_la_sesion(string rol)
+    {
+        var token = ApiDePrueba.TokenManual(rol, DateTime.UtcNow.AddHours(1));
+
+        var respuesta = await _api.ClienteConToken(token).GetAsync("/api/auth/me");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+        var problema = await respuesta.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.Equal("La sesión no es válida. Inicia sesión de nuevo.", problema?.Detail);
+    }
+
+    [Fact]
+    public async Task Sub_que_no_es_un_id_invalida_la_sesion()
+    {
+        var token = ApiDePrueba.TokenManual(nameof(RolUsuario.Alumno), DateTime.UtcNow.AddHours(1), sub: "no-es-un-guid");
+
+        var respuesta = await _api.ClienteConToken(token).GetAsync("/api/auth/me");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+        var problema = await respuesta.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.Equal("La sesión no es válida. Inicia sesión de nuevo.", problema?.Detail);
     }
 
     [Theory]

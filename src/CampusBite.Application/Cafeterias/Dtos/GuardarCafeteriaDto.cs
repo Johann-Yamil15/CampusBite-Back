@@ -28,18 +28,17 @@ public class GuardarCafeteriaDto : IValidatableObject
     [Required(ErrorMessage = "Indica los métodos de pago.")]
     public List<MetodoPago> MetodosPago { get; set; } = [];
 
+    // Solo corre si los atributos pasaron: [Required] ya rechaza nulos y textos de puros espacios.
+    // Aquí va lo que los atributos no pueden expresar.
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (string.IsNullOrWhiteSpace(Nombre) || Nombre.Trim().Length < 2)
+        // MinLength cuenta los espacios: " A " mide 3 pero solo tiene 1 carácter real
+        if (Nombre.Trim().Length < 2)
             yield return new ValidationResult("El nombre debe tener al menos 2 caracteres.", [nameof(Nombre)]);
-        if (string.IsNullOrWhiteSpace(Ubicacion))
-            yield return new ValidationResult("La ubicación es obligatoria.", [nameof(Ubicacion)]);
-        if (string.IsNullOrWhiteSpace(PuntoEntrega))
-            yield return new ValidationResult("El punto de entrega es obligatorio.", [nameof(PuntoEntrega)]);
 
-        if (MetodosPago is null || MetodosPago.Count == 0)
+        if (MetodosPago.Count == 0)
             yield return new ValidationResult("La cafetería debe aceptar al menos un método de pago.", [nameof(MetodosPago)]);
-        // JSON acepta números en un enum ("metodosPago": [7]): se rechaza cualquier valor que no exista
+        // La API ya rechaza números en el JSON; esto cubre un valor fuera del enum que llegue por código
         else if (MetodosPago.Any(m => !Enum.IsDefined(m)))
             yield return new ValidationResult("Método de pago no válido. Usa: Tarjeta, Transferencia o Efectivo.", [nameof(MetodosPago)]);
     }

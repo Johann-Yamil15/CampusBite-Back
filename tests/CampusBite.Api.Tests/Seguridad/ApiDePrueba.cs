@@ -53,17 +53,18 @@ public class ApiDePrueba : WebApplicationFactory<Program>
     }
 
     // Token hecho a mano para los casos que TokenService no genera (vencido, otra llave, rol desconocido)
-    public static string TokenManual(string rol, DateTime expira, string llave = Llave) =>
+    public static string TokenManual(string rol, DateTime expira, string llave = Llave,
+                                     string emisor = Emisor, string audiencia = Audiencia, string? sub = null) =>
         new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
-            Issuer = Emisor,
-            Audience = Audiencia,
+            Issuer = emisor,
+            Audience = audiencia,
             NotBefore = expira.AddHours(-2),
             IssuedAt = expira.AddHours(-2),
             Expires = expira,
             Claims = new Dictionary<string, object>
             {
-                [JwtRegisteredClaimNames.Sub] = Guid.NewGuid().ToString(),
+                [JwtRegisteredClaimNames.Sub] = sub ?? Guid.NewGuid().ToString(),
                 ["role"] = rol
             },
             SigningCredentials = new SigningCredentials(

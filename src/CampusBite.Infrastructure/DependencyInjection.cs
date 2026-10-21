@@ -48,8 +48,19 @@ public static class DependencyInjection
         var datos = new NpgsqlConnectionStringBuilder(connectionString);
         services.AddSingleton(new DatabaseInfo(nombre, datos.Host ?? "?", datos.Database ?? "?", datos.Username ?? "?"));
 
+        // JY-Sprint3 20/10/2026: la BD limita a app_backend a 50 conexiones (07_seguridad/002_limites_rol_api.sql) y
+        // Npgsql abre hasta 100 por defecto. La prueba de carga (100 usuarios a la vez) dio 2 mil errores 500
+        // "too many connections for role". Con el pool por debajo del límite, si se llena las peticiones esperan
+        // turno en lugar de fallar. Si hay varias instancias de la API, la suma de sus pools debe quedar bajo 50.
+        // Se respeta si la cadena ya trae "Maximum Pool Size"; si no, Database__MaxConexiones (40 por defecto).
+        if (!connectionString.Contains("Maximum Pool Size", StringComparison.OrdinalIgnoreCase) &&
+            !connectionString.Contains("Max Pool Size", StringComparison.OrdinalIgnoreCase))
+        {
+            datos.MaxPoolSize = configuration.GetValue("Database:MaxConexiones", 40);
+        }
+
         services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString)
+            options.UseNpgsql(datos.ConnectionString)
                    .UseSnakeCaseNamingConvention());
     }
 }

@@ -17,11 +17,14 @@ public class CafeteriaRepository : ICafeteriaRepository
         _context = context;
     }
 
-    public Task<IReadOnlyList<CafeteriaDto>> ListarAsync(Guid idActor, bool incluirInactivas, CancellationToken cancellationToken = default) =>
-        _context.EjecutarAsync<IReadOnlyList<CafeteriaDto>>(
-            "CALL sp_listar_cafeterias(@actor, @inactivas, NULL)",
-            [Id("actor", idActor), Logico("inactivas", incluirInactivas)],
-            fila => fila.LeerJson<List<CafeteriaDto>>(0) ?? [],
+    public Task<(IReadOnlyList<CafeteriaDto> Cafeterias, int Total)> ListarAsync(
+        Guid idActor, bool incluirInactivas, string? buscar, int limite, int desplazamiento,
+        CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync<(IReadOnlyList<CafeteriaDto>, int)>(
+            "CALL sp_listar_cafeterias(@actor, @inactivas, @buscar, @limite, @desplazamiento, NULL, NULL)",
+            [Id("actor", idActor), Logico("inactivas", incluirInactivas), Texto("buscar", buscar),
+             Entero("limite", limite), Entero("desplazamiento", desplazamiento)],
+            fila => (fila.LeerJson<List<CafeteriaDto>>(1) ?? [], fila.GetInt32(0)),
             cancellationToken);
 
     public Task<CafeteriaDto?> ObtenerAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default) =>

@@ -1,0 +1,8 @@
+{
+  "stryker-config": {
+    "project": "CampusBite.Infrastructure.csproj",
+    "mutate": [ "**/Persistence/Procedimientos.cs" ],
+    "reporters": [ "html", "json", "progress" ],
+    "thresholds": { "high": 90, "low": 75, "break": 0 }
+  }
+}

@@ -129,6 +129,11 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="scripts/03_cambios_sprint3/002_indice_ordenes_en_curso.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint3/002_indice_ordenes_en_curso.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
     <changeSet id="scripts/04_triggers/001_actualizado_en.sql" author="campusbite" runOnChange="true">
         <sqlFile path="scripts/04_triggers/001_actualizado_en.sql" splitStatements="false" stripComments="false"/>
         <rollback/>

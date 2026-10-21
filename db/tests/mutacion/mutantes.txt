@@ -1,0 +1,39 @@
+# JY-Sprint3 20/10/2026: mutantes de la BD (TEC-08 y lo que toca). Cada línea es un error realista que alguien
+# podría introducir. probar_mutantes.sh aplica uno por uno sobre una base sana y corre el smoke test: si el smoke
+# test PASA con el error puesto, el mutante "sobrevive" y falta una prueba.
+#
+# Formato:  id ||| archivo (relativo a db/scripts) ||| texto original ||| texto mutado ||| qué simula
+# Los mutantes de concurrencia (bloqueos) no los puede ver el smoke test (una sola sesión): esos los cubre
+# db/tests/estres/concurrencia.sh. Están marcados con [concurrencia].
+
+M01 ||| 06_procedimientos/017_sp_crear_cafeteria.sql ||| CALL sp_exigir_admin_sistema(p_id_actor, 'crear cafeterías'); |||  ||| Cualquiera puede crear cafeterías
+M02 ||| 06_procedimientos/017_sp_crear_cafeteria.sql ||| CALL sp_validar_datos_cafeteria(p_nombre, p_ubicacion, p_punto_entrega, p_es_del_campus, p_metodos); |||  ||| Crear sin validar los datos
+M03 ||| 06_procedimientos/017_sp_crear_cafeteria.sql ||| VALUES (btrim(p_nombre), ||| VALUES (p_nombre, ||| El nombre se guarda con espacios
+M04 ||| 06_procedimientos/017_sp_crear_cafeteria.sql ||| SELECT DISTINCT p_id_cafeteria, m FROM unnest(p_metodos) m WHERE m IS NOT NULL; ||| SELECT p_id_cafeteria, m FROM unnest(p_metodos) m WHERE m IS NOT NULL; ||| Métodos repetidos rompen el alta
+M05 ||| 06_procedimientos/017_sp_crear_cafeteria.sql ||| PERFORM set_config('app.id_actor', p_id_actor::text, true);      -- autor en la bitácora |||  ||| La bitácora no registra quién creó
+M06 ||| 06_procedimientos/018_sp_actualizar_cafeteria.sql ||| CALL sp_exigir_gestor_cafeteria(p_id_cafeteria, p_id_actor, 'editar esta cafetería'); |||  ||| Cualquiera edita cualquier cafetería
+M07 ||| 06_procedimientos/018_sp_actualizar_cafeteria.sql ||| CALL sp_validar_datos_cafeteria(p_nombre, p_ubicacion, p_punto_entrega, p_es_del_campus, p_metodos); |||  ||| Editar sin validar (deja sin métodos)
+M08 ||| 06_procedimientos/018_sp_actualizar_cafeteria.sql ||| WHERE m.id_cafeteria = p_id_cafeteria AND m.metodo <> ALL (array_remove(p_metodos, NULL)); ||| WHERE false; ||| Editar no quita los métodos que ya no acepta
+M09 ||| 06_procedimientos/018_sp_actualizar_cafeteria.sql ||| RAISE EXCEPTION 'La cafetería no existe' USING ERRCODE = 'no_data_found'; ||| NULL; ||| Editar una inexistente no avisa
+M10 ||| 06_procedimientos/018_sp_actualizar_cafeteria.sql ||| WHERE c.id_cafeteria = p_id_cafeteria FOR UPDATE; ||| WHERE c.id_cafeteria = p_id_cafeteria; ||| [concurrencia] Dos ediciones simultáneas sin bloqueo (EQUIVALENTE: el UPDATE de la misma fila ya las forma en fila; la prueba de concurrencia lo confirmó)
+M11 ||| 06_procedimientos/019_sp_cambiar_activa_cafeteria.sql ||| IF v_en_curso > 0 THEN ||| IF false THEN ||| Desactivar con órdenes en curso
+M12 ||| 06_procedimientos/019_sp_cambiar_activa_cafeteria.sql ||| CALL sp_exigir_admin_sistema(p_id_actor, CASE WHEN p_activa THEN 'reactivar cafeterías' ELSE 'desactivar cafeterías' END); |||  ||| Cualquiera desactiva cafeterías
+M13 ||| 06_procedimientos/019_sp_cambiar_activa_cafeteria.sql ||| UPDATE cafeteria SET activa = p_activa WHERE ||| UPDATE cafeteria SET activa = true WHERE ||| La baja no cambia nada
+M14 ||| 06_procedimientos/019_sp_cambiar_activa_cafeteria.sql ||| WHERE c.id_cafeteria = p_id_cafeteria FOR UPDATE; ||| WHERE c.id_cafeteria = p_id_cafeteria; ||| [concurrencia] Baja sin esperar a órdenes en proceso
+M15 ||| 06_procedimientos/016_sp_obtener_cafeteria.sql ||| AND (c.activa OR EXISTS ( ||| AND (true OR EXISTS ( ||| Una inactiva la ve cualquiera
+M16 ||| 06_procedimientos/016_sp_obtener_cafeteria.sql ||| AND (u.id_rol = 3 OR (u.id_rol = 2 AND u.id_cafeteria = c.id_cafeteria))))) v; ||| AND (u.id_rol = 3 OR u.id_rol = 2))) v; ||| Un encargado ve inactivas que no son suyas
+M17 ||| 06_procedimientos/015_sp_listar_cafeterias.sql ||| CALL sp_exigir_admin_sistema(p_id_actor, 'ver cafeterías inactivas'); |||  ||| Cualquiera lista inactivas
+M18 ||| 06_procedimientos/015_sp_listar_cafeterias.sql ||| WHERE (c.activa OR v_inactivas) ||| WHERE (true) ||| La lista normal trae inactivas
+M29 ||| 06_procedimientos/015_sp_listar_cafeterias.sql ||| AND (v_buscar IS NULL OR strpos(lower(c.nombre), v_buscar) > 0) ||| AND (v_buscar IS NULL OR strpos(c.nombre, v_buscar) > 0) ||| La búsqueda distingue mayúsculas
+M30 ||| 06_procedimientos/015_sp_listar_cafeterias.sql ||| LIMIT LEAST(GREATEST(COALESCE(p_limite, 20), 1), 100) ||| LIMIT GREATEST(COALESCE(p_limite, 20), 1) ||| Sin tope de 100 por página
+M31 ||| 03_cambios_sprint3/002_indice_ordenes_en_curso.sql ||| WHERE estado IN ('pendiente','confirmada','en_preparacion','lista'); ||| WHERE estado IN ('confirmada','en_preparacion','lista'); ||| El índice de órdenes en curso no cubre 'pendiente'
+M19 ||| 06_procedimientos/013_sp_exigir_admin_sistema.sql ||| AND u.activo AND u.id_rol = 3) ||| AND u.activo AND u.id_rol >= 2) ||| Un encargado pasa como admin del sistema
+M20 ||| 06_procedimientos/013_sp_exigir_admin_sistema.sql ||| AND u.activo AND u.id_rol = 3) ||| AND u.id_rol = 3) ||| Un admin desactivado sigue con permisos
+M21 ||| 06_procedimientos/014_sp_validar_datos_cafeteria.sql ||| IF COALESCE(cardinality(array_remove(p_metodos, NULL)), 0) = 0 THEN ||| IF false THEN ||| Cafetería sin métodos de pago
+M22 ||| 06_procedimientos/014_sp_validar_datos_cafeteria.sql ||| IF btrim(COALESCE(p_ubicacion, '')) = '' THEN ||| IF false THEN ||| Ubicación vacía
+M23 ||| 06_procedimientos/014_sp_validar_datos_cafeteria.sql ||| IF btrim(COALESCE(p_punto_entrega, '')) = '' THEN ||| IF false THEN ||| Punto de entrega vacío
+M24 ||| 06_procedimientos/014_sp_validar_datos_cafeteria.sql ||| IF length(btrim(COALESCE(p_nombre, ''))) < 2 THEN ||| IF length(COALESCE(p_nombre, '')) < 2 THEN ||| Nombre de puros espacios
+M25 ||| 06_procedimientos/014_sp_validar_datos_cafeteria.sql ||| IF p_es_del_campus IS NULL THEN ||| IF false THEN ||| es_del_campus nulo
+M26 ||| 06_procedimientos/005_sp_crear_orden.sql ||| AND c.activa FOR SHARE; ||| AND c.activa; ||| [concurrencia] Orden nueva sin esperar a una baja en proceso
+M27 ||| 06_procedimientos/005_sp_crear_orden.sql ||| PERFORM 1 FROM cafeteria c WHERE c.id_cafeteria = p_id_cafeteria AND c.activa FOR SHARE; ||| PERFORM 1 FROM cafeteria c WHERE c.id_cafeteria = p_id_cafeteria FOR SHARE; ||| Se puede ordenar en una cafetería inactiva
+M28 ||| 07_seguridad/001_privilegios.sql ||| -- Internos (no se dan a app_backend) ||| GRANT EXECUTE ON PROCEDURE sp_exigir_admin_sistema, sp_validar_datos_cafeteria TO app_backend; -- Internos (no se dan a app_backend) ||| La API puede llamar procedimientos internos

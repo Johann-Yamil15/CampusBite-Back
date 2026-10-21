@@ -154,7 +154,7 @@ BEGIN
   RAISE NOTICE 'OK 9: validaciones de hora, cantidad, items y método de pago (cafeteria_metodo_pago)';
 
   -- 10. Lecturas por procedimiento -----------------------------------------------
-  CALL sp_menu_cafeteria(NULL, v_json);
+  CALL sp_menu_cafeteria(c_cafe, v_json);
   ASSERT jsonb_array_length(v_json) = 1, 'El menú debe traer 1 cafetería';
   ASSERT jsonb_array_length(v_json->0->'productos') = 3, 'El menú debe traer 3 productos';
   ASSERT jsonb_array_length(v_json->0->'metodos_pago') = 3, 'La cafetería debe aceptar 3 métodos';
@@ -297,7 +297,7 @@ BEGIN
     ('idx_horario_cafeteria_dia','idx_usuario_rol','idx_cafeteria_activa','idx_cafeteria_admin','idx_producto_categoria')),
     'Los índices depurados no deben existir';
   ASSERT (SELECT count(*) FROM pg_indexes i WHERE i.schemaname = 'public' AND i.indexname IN
-    ('idx_orden_usuario_fecha','idx_orden_cola_cafeteria','idx_producto_cafeteria','idx_historial_orden_fecha',
+    ('idx_orden_usuario_fecha','idx_orden_en_curso','idx_producto_cafeteria','idx_historial_orden_fecha',
      'idx_detalle_producto','idx_push_usuario')) = 6, 'Faltan índices que sí se usan';
   RAISE NOTICE 'OK 17: índices depurados y los 6 útiles presentes';
 
@@ -388,6 +388,7 @@ DECLARE
   v_otro    UUID;
   v_json    JSONB;
   v_ok      BOOLEAN;
+  v_total   INT;
 BEGIN
   SET LOCAL ROLE app_backend;
 
@@ -447,13 +448,13 @@ BEGIN
   ASSERT v_json IS NULL, 'Una cafetería inactiva no debe verse para un alumno';
   CALL sp_obtener_cafeteria(v_id, c_sistema, v_json);
   ASSERT (v_json->>'activa')::boolean = false, 'admin_sistema sí ve la inactiva';
-  CALL sp_listar_cafeterias(c_alumno, false, v_json);
+  CALL sp_listar_cafeterias(c_alumno, false, NULL, 100, 0, v_total, v_json);
   ASSERT NOT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'La lista normal no trae inactivas';
   v_ok := false;
-  BEGIN CALL sp_listar_cafeterias(c_alumno, true, v_json);
+  BEGIN CALL sp_listar_cafeterias(c_alumno, true, NULL, 100, 0, v_total, v_json);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'Solo admin_sistema lista inactivas';
-  CALL sp_listar_cafeterias(c_sistema, true, v_json);
+  CALL sp_listar_cafeterias(c_sistema, true, NULL, 100, 0, v_total, v_json);
   ASSERT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'admin_sistema lista inactivas';
   CALL sp_cambiar_activa_cafeteria(v_id, true, c_sistema);
   CALL sp_obtener_cafeteria(v_id, c_alumno, v_json);
@@ -465,5 +466,129 @@ BEGIN
   RAISE NOTICE 'OK 21: CRUD de cafeterías con permisos, nombre único, baja lógica protegida y bitácora';
 END $$;
 
+-- 22. Reglas que encontraron las pruebas de mutación (db/tests/mutacion) -----------------------
+-- Cada bloque mata un mutante que antes sobrevivía: si alguien quita esa regla, esta prueba falla.
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_sistema UUID := '00000000-0000-0000-0000-0000000000a3';
+  c_cafe    UUID := '00000000-0000-0000-0000-0000000000c1';
+  c_p1      UUID := '00000000-0000-0000-0000-0000000000e1';
+  v_hora    TIMESTAMPTZ := (date_trunc('day', now() AT TIME ZONE 'America/Mexico_City') + interval '1 day 14 hours')
+                           AT TIME ZONE 'America/Mexico_City';
+  v_id      UUID;
+  v_msg     TEXT;
+  r         RECORD;
+BEGIN
+  -- Cada dato inválido se rechaza con SU mensaje (no basta con que falle: la regla de la tabla también
+  -- fallaría, pero con un texto de PostgreSQL que no se le puede mostrar al usuario)
+  FOR r IN
+    SELECT v.nombre, v.ubicacion, v.punto, v.campus, v.mensaje
+      FROM (VALUES
+        ('   ',        'Edificio Z', 'Puerta', true,  'El nombre debe tener al menos 2 caracteres'),
+        ('Valida 1',   '   ',        'Puerta', true,  'La ubicación es obligatoria'),
+        ('Valida 2',   'Edificio Z', '',       true,  'El punto de entrega es obligatorio'),
+        ('Valida 3',   'Edificio Z', 'Puerta', NULL,  'Indica si la cafetería es del campus')
+      ) AS v(nombre, ubicacion, punto, campus, mensaje)
+  LOOP
+    v_msg := NULL;
+    BEGIN
+      CALL sp_crear_cafeteria(c_sistema, r.nombre, r.ubicacion, r.campus, r.punto, ARRAY['efectivo']::metodo_pago[], v_id);
+    EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM;
+    END;
+    ASSERT v_msg = r.mensaje, format('Se esperaba "%s", llegó "%s"', r.mensaje, COALESCE(v_msg, 'sin error'));
+  END LOOP;
+
+  -- Editar valida igual que crear
+  v_msg := NULL;
+  BEGIN
+    CALL sp_actualizar_cafeteria(c_cafe, c_sistema, 'Cafetería Central (prueba)', 'Edificio principal', true, 'Puerta 1',
+                                 '{}'::metodo_pago[]);
+  EXCEPTION WHEN check_violation THEN v_msg := SQLERRM;
+  END;
+  ASSERT v_msg = 'La cafetería debe aceptar al menos un método de pago', 'Editar sin métodos de pago debió rechazarse';
+
+  -- Un admin_sistema desactivado pierde sus permisos al instante (el rol del token no basta)
+  UPDATE usuario SET activo = false WHERE id_usuario = c_sistema;
+  v_msg := NULL;
+  BEGIN
+    CALL sp_crear_cafeteria(c_sistema, 'Admin Desactivado', 'Edificio Z', true, 'Puerta', ARRAY['efectivo']::metodo_pago[], v_id);
+  EXCEPTION WHEN insufficient_privilege THEN v_msg := SQLERRM;
+  END;
+  UPDATE usuario SET activo = true WHERE id_usuario = c_sistema;
+  ASSERT v_msg IS NOT NULL, 'Un admin desactivado no debe crear cafeterías';
+
+  -- No se puede ordenar en una cafetería inactiva
+  UPDATE cafeteria SET activa = false WHERE id_cafeteria = c_cafe;
+  v_msg := NULL;
+  BEGIN
+    CALL sp_crear_orden(c_alumno, c_cafe, v_hora, 'efectivo',
+      jsonb_build_array(jsonb_build_object('id_producto', c_p1, 'cantidad', 1)), NULL, v_id);
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM;
+  END;
+  UPDATE cafeteria SET activa = true WHERE id_cafeteria = c_cafe;
+  ASSERT v_msg = 'La cafetería no existe o no está activa', format('Ordenar en una inactiva debió rechazarse, llegó "%s"', v_msg);
+
+  -- Los procedimientos internos no los puede ejecutar la API
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.pronamespace = 'public'::regnamespace
+       AND p.proname IN ('sp_exigir_gestor_cafeteria', 'sp_exigir_admin_sistema', 'sp_validar_datos_cafeteria')
+       AND has_function_privilege('app_backend', p.oid, 'EXECUTE')),
+    'app_backend no debe poder ejecutar procedimientos internos';
+
+  RAISE NOTICE 'OK 22: validaciones con su mensaje, editar valida, admin desactivado sin permisos, sin órdenes en inactivas, internos cerrados';
+END $$;
+
+-- 23. Listado paginado y búsqueda (hallazgo de las pruebas de estrés) -------------------------------
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_sistema UUID := '00000000-0000-0000-0000-0000000000a3';
+  v_id      UUID;
+  v_json    JSONB;
+  v_total   INT;
+  v_ok      BOOLEAN;
+  v_nombres TEXT[];
+BEGIN
+  FOR i IN 1..25 LOOP
+    CALL sp_crear_cafeteria(c_sistema, format('Paginada %s', lpad(i::text, 2, '0')), 'Edificio P', true, 'Puerta',
+                            ARRAY['efectivo']::metodo_pago[], v_id);
+  END LOOP;
+  SET LOCAL ROLE app_backend;
+
+  -- Páginas de 10: 10, 10 y 5, en orden alfabético y sin repetir
+  CALL sp_listar_cafeterias(c_alumno, false, 'paginada', 10, 0, v_total, v_json);
+  ASSERT v_total = 25 AND jsonb_array_length(v_json) = 10, format('Página 1: total %s, elementos %s', v_total, jsonb_array_length(v_json));
+  ASSERT v_json->0->>'nombre' = 'Paginada 01' AND v_json->9->>'nombre' = 'Paginada 10', 'La página 1 debe ir de 01 a 10';
+  CALL sp_listar_cafeterias(c_alumno, false, 'paginada', 10, 20, v_total, v_json);
+  ASSERT jsonb_array_length(v_json) = 5 AND v_json->0->>'nombre' = 'Paginada 21', 'La página 3 debe traer 21 a 25';
+  CALL sp_listar_cafeterias(c_alumno, false, 'paginada', 10, 30, v_total, v_json);
+  ASSERT v_total = 25 AND v_json = '[]'::jsonb, 'Una página fuera de rango viene vacía pero con el total';
+
+  -- Límites: más de 100 se recorta a 100; 0 o negativo usa 1; desplazamiento negativo usa 0
+  CALL sp_listar_cafeterias(c_alumno, false, NULL, 1000, 0, v_total, v_json);
+  ASSERT jsonb_array_length(v_json) = LEAST(v_total, 100), 'El límite máximo es 100';
+  CALL sp_listar_cafeterias(c_alumno, false, 'paginada', 0, -5, v_total, v_json);
+  ASSERT jsonb_array_length(v_json) = 1 AND v_json->0->>'nombre' = 'Paginada 01', 'Límite mínimo 1 y desplazamiento mínimo 0';
+
+  -- Búsqueda sin distinguir mayúsculas; los comodines se toman como texto
+  CALL sp_listar_cafeterias(c_alumno, false, '  PAGINADA 2 ', 100, 0, v_total, v_json);
+  ASSERT v_total = 6, format('"paginada 2" debe encontrar 20 a 25, encontró %s', v_total);
+  CALL sp_listar_cafeterias(c_alumno, false, '%', 100, 0, v_total, v_json);
+  ASSERT v_total = 0, 'Un "%" no es comodín: no hay nombres con ese carácter';
+
+  -- El menú pide la cafetería
+  v_ok := false;
+  BEGIN CALL sp_menu_cafeteria(NULL, v_json);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'sp_menu_cafeteria sin cafetería debe rechazarse';
+  RESET ROLE;
+
+  -- El índice nuevo cubre los 4 estados en curso (la baja ya no recorre toda la tabla de órdenes)
+  ASSERT (SELECT pg_get_indexdef('idx_orden_en_curso'::regclass)) LIKE '%pendiente%', 'idx_orden_en_curso debe incluir pendiente';
+  RAISE NOTICE 'OK 23: listado paginado (total, orden, límites), búsqueda, menú con cafetería obligatoria e índice de órdenes en curso';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 21 de 21 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 23 de 23 OK (transacción revertida)'

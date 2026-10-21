@@ -45,3 +45,6 @@ secrets.json
 # Sistema operativo
 Thumbs.db
 .DS_Store
+
+# JY-Sprint3 20/10/2026: reportes de las pruebas de mutación (dotnet stryker)
+StrykerOutput/

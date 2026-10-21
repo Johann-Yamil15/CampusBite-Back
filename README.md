@@ -92,7 +92,7 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 |---|---|---|
 | `CALL sp_registrar_usuario(nombre, correo, hash, matricula, telefono, NULL)` | `p_id_usuario` | Crea un alumno. Correo o matrícula repetidos → error `23505` |
 | `CALL sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo` | Para el login; todo `NULL` si el correo no existe |
-| `CALL sp_menu_cafeteria(id_cafeteria o NULL, NULL)` | `p_menu` (JSON) | Cafeterías activas con `metodos_pago` y `productos` |
+| `CALL sp_menu_cafeteria(id_cafeteria, NULL)` | `p_menu` (JSON) | Menú de una cafetería activa con `metodos_pago` y `productos`; la cafetería es obligatoria |
 | `CALL sp_crear_orden(id_usuario, id_cafeteria, recogida_en, metodo, items, notas, NULL)` | `p_id_orden` | Orden + detalle + pago. `items`: `[{"id_producto":"<uuid>","cantidad":2}]`. Valida alumno activo, horario, recogida ≥ 5 min, método aceptado y productos. Efectivo queda `confirmada`; tarjeta o transferencia, `pendiente` |
 | `CALL sp_confirmar_pago(id_orden, referencia)` | — | Tarjeta o transferencia: pago `pagado` y orden `confirmada` |
 | `CALL sp_cambiar_estado_orden(id_orden, nuevo, id_actor)` | — | `en_preparacion`, `lista` o `cancelada`. Solo el encargado de esa cafetería o `admin_sistema` |
@@ -101,7 +101,7 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero; máximo 100 por página |
 | `CALL sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo el encargado o `admin_sistema` (error `42501` si no) |
 | `CALL sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro (qué cambió, quién y cuándo). Solo `admin_sistema` |
-| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | Cafeterías por nombre; las inactivas solo `admin_sistema` |
+| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, buscar, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_cafeterias` (JSON) | Una página por nombre (máx. 100) y el total; las inactivas solo `admin_sistema` |
 | `CALL sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | Una cafetería; `NULL` si no existe o es inactiva y el actor no la administra |
 | `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
 | `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
@@ -181,8 +181,8 @@ aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se pued
 
 | Método y ruta | Quién | Cuerpo | Respuestas |
 |---|---|---|---|
-| `GET /api/cafeterias` | Cualquier rol (solo activas) | — | 200 · 401 |
-| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 401 · 403 |
+| `GET /api/cafeterias?pagina=1&tamano=20&buscar=norte` | Cualquier rol (solo activas) | — | 200 · 400 · 401 |
+| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 400 · 401 · 403 |
 | `GET /api/cafeterias/{id}` | Cualquier rol; una inactiva solo su encargado y `AdminSistema` (los demás reciben 404) | — | 200 · 401 · 404 |
 | `POST /api/cafeterias` | `AdminSistema` | `GuardarCafeteriaDto` | 201 (+ `Location`) · 400 · 401 · 403 · 409 |
 | `PUT /api/cafeterias/{id}` | Su encargado (`AdminCafeteria` de **esa** cafetería) o `AdminSistema` | `GuardarCafeteriaDto` | 200 · 400 · 401 · 403 · 404 · 409 |
@@ -194,11 +194,18 @@ aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se pued
 { "nombre": "Cafetería Norte", "ubicacion": "Edificio K, planta baja", "esDelCampus": true,
   "puntoEntrega": "Ventanilla 2", "metodosPago": ["Efectivo", "Tarjeta"] }
 
-// Respuesta (lista, detalle, POST y PUT)
+// Respuesta de detalle, POST y PUT (y cada elemento de la lista)
 { "idCafeteria": "…", "nombre": "Cafetería Norte", "ubicacion": "Edificio K, planta baja", "esDelCampus": true,
   "puntoEntrega": "Ventanilla 2", "activa": true, "metodosPago": ["Tarjeta", "Efectivo"],
   "creadoEn": "2026-10-20T16:00:00+00:00", "actualizadoEn": "2026-10-20T16:00:00+00:00" }
+
+// Respuesta de la lista: una página
+{ "elementos": [ { …cafetería… } ], "total": 45, "pagina": 1, "tamano": 20, "totalPaginas": 3 }
 ```
+
+La lista está **paginada**: `pagina` (desde 1, por defecto 1), `tamano` (1 a 100, por defecto 20) y `buscar` (texto
+dentro del nombre, sin distinguir mayúsculas), en orden alfabético. Se paginó por las pruebas de estrés: con 10 mil
+cafeterías, la lista completa eran 3 MB y ~150 ms por llamada; una página es ~7 KB y ~2 ms.
 
 | Código | Cuándo |
 |---|---|
@@ -206,6 +213,7 @@ aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se pued
 | 403 | El rol no puede hacer la acción, o es encargado de **otra** cafetería |
 | 404 | No existe, o es inactiva y no la administras |
 | 409 | Ya existe una cafetería con ese nombre (sin distinguir mayúsculas), o se intenta desactivar con órdenes en curso |
+| 503 | La base está saturada o un bloqueo tardó demasiado: reintentar después de los segundos de `Retry-After` |
 
 - Los métodos de pago se envían y se reciben como texto; un número o un método que no existe da 400.
 - `PUT` reemplaza los métodos de pago por la lista enviada. No cambia `activa`: para eso están `DELETE` y `reactivar`.
@@ -317,6 +325,7 @@ cp .env.example .env   # y llenar los valores reales
 | `Database__Conexion` | `Local` o `Produccion`: cuál de las dos cadenas usar en tu máquina (los perfiles ya la fijan) |
 | `ConnectionStrings__Local` / `ConnectionStrings__Produccion` | Cadenas de la base local y de Neon |
 | `ConnectionStrings__Database` | Cadena que usa Azure (cuando no hay `Database__Conexion`) |
+| `Database__MaxConexiones` | Opcional: tamaño del pool de conexiones (40 por defecto). La BD permite 50 a `app_backend`: con varias instancias de la API, la suma debe quedar por debajo |
 | `Jwt__Key` | Llave de firma del JWT (mínimo 32 caracteres) |
 | `Jwt__Issuer` / `Jwt__Audience` | Emisor y audiencia del token |
 | `Jwt__ExpirationMinutes` | Duración del token |
@@ -337,7 +346,7 @@ cd ..
 # 2) Levantar la API con la base local (ConnectionStrings__Local en .env)
 dotnet run --project src/CampusBite.Api --launch-profile https    # https://localhost:7254 (el que usa el proxy del front)
 
-# 3) Pruebas (también corren en GitHub Actions antes de cada despliegue)
+# 3) Pruebas (también corren en GitHub Actions antes de cada despliegue). Detalle en la sección "Pruebas"
 dotnet test
 ```
 
@@ -351,6 +360,69 @@ Si ya tienes PostgreSQL instalado en el puerto 5432, el contenedor `db` choca co
 `db/.env` (por ejemplo, `5433`) y usa ese mismo puerto en `ConnectionStrings__Local`.
 
 Swagger: https://localhost:7254/swagger (o http://localhost:5167/swagger con el perfil `http`) — usa `POST /api/auth/login` y pega el token en **Authorize**.
+
+## Pruebas
+
+```bash
+dotnet test                                    # 139 pruebas (las de BD se omiten si no hay CAMPUSBITE_TEST_DB)
+```
+
+| Proyecto | Qué prueba | Base de datos |
+|---|---|---|
+| `tests/CampusBite.Application.Tests` | Servicios y validación de DTOs, con repositorios falsos | No |
+| `tests/CampusBite.Api.Tests` | La API real en memoria: JWT, roles, endpoints, formato de errores, configuración insegura | No |
+| `tests/CampusBite.Infrastructure.Tests` | Traducción de errores de PostgreSQL y JSON; **repositorios contra PostgreSQL real** | Opcional: `CAMPUSBITE_TEST_DB` |
+| `db/tests/smoke_test.sql` | 23 verificaciones del esquema y los procedimientos | Sí |
+
+Para correr también las de BD (se conectan como `app_backend`, así que prueban los `GRANT`):
+```bash
+CAMPUSBITE_TEST_DB="Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=app_backend_dev" dotnet test
+```
+
+### Pruebas de mutación (¿las pruebas detectan errores de verdad?)
+Una herramienta mete errores a propósito (cambia un `<` por `<=`, borra una línea, quita una validación) y revisa que
+alguna prueba falle. Un mutante que "sobrevive" es un error que nadie detectaría.
+
+```bash
+dotnet tool install -g dotnet-stryker                       # una vez
+cd tests/CampusBite.Application.Tests && dotnet stryker      # igual en Api.Tests e Infrastructure.Tests
+```
+Cada carpeta trae su `stryker-config.json`; el reporte queda en `StrykerOutput/` (ignorado por git).
+Para la BD: `PSQL="psql -U postgres" ./db/tests/mutacion/probar_mutantes.sh` (31 mutantes en `mutantes.txt`).
+
+| Capa | Antes | Ahora | Lo que sobrevive |
+|---|---|---|---|
+| Application (Cafeterías) | 20 % | 100 % de los que cambian algo | 6 equivalentes (valores por defecto `= string.Empty` que siempre se reemplazan) |
+| Api (TEC-07, TEC-08, JWT) | 37 % | 97 % | 2 equivalentes |
+| Infrastructure (`Procedimientos.cs`) | sin pruebas | 94 % | 2 equivalentes |
+| BD (procedimientos) | 61 % | 27 de 27 + 2 de 3 de concurrencia | 1 equivalente (M10) |
+
+Lo que encontró y se corrigió: reglas de validación sin ninguna prueba, código muerto en `GuardarCafeteriaDto`,
+que nada revisaba emisor y audiencia del JWT ni que un admin desactivado perdiera permisos, y que se podía borrar
+la llamada al servicio en `DELETE`/`reactivar` sin que fallara nada.
+
+### Pruebas de estrés y de carga
+Están en `db/tests/estres/` (ver `db/README.md`) y `tests/CampusBite.Carga`. Resultados con 10 mil cafeterías y
+500 mil órdenes (1,4 GB):
+
+| Prueba | Resultado |
+|---|---|
+| Carga HTTP, 100 usuarios a la vez, 30 s | 1 222 peticiones/s, p95 127 ms, **0 errores** |
+| Carga HTTP, 300 usuarios a la vez, 30 s | 1 259 peticiones/s (techo del pool), p95 396 ms, **0 errores** |
+| Concurrencia (pgbench): órdenes vs. bajas, ediciones y altas simultáneas | 0 órdenes coladas, 0 deadlocks, 1 de 32 altas con el mismo nombre |
+
+Lo que encontraron y se corrigió:
+- **2 310 errores 500 con 100 usuarios**: el pool de Npgsql (100) superaba el límite de `app_backend` en la BD (50).
+  Ahora el pool es de 40 (`Database__MaxConexiones`) y, si se satura, responde **503 con `Retry-After`**, no 500.
+- La lista de cafeterías devolvía todas (3 MB, 150 ms): ahora es paginada.
+- Dar de baja recorría las 500 mil órdenes (faltaba `pendiente` en el índice): de 17 ms a 0,1 ms.
+- `sp_menu_cafeteria(NULL)` devolvía todas con sus productos (29 MB, 3 s): ahora pide la cafetería.
+
+```bash
+# Carga HTTP contra una API levantada y una base de PRUEBAS (las ediciones cambian datos)
+dotnet run -c Release --project tests/CampusBite.Carga -- --url http://localhost:5167 --usuarios 100 --segundos 30 \
+  --admin-correo <correo admin> --admin-password <clave>
+```
 
 ## Contraseñas y token JWT
 - **Contraseñas:** se cifran con BCrypt, costo 12 (`src/CampusBite.Infrastructure/Security/BCryptPasswordHasher.cs`). La base solo guarda el hash.

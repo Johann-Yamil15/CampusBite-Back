@@ -13,7 +13,9 @@ CREATE OR REPLACE PROCEDURE sp_actualizar_cafeteria(
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-  -- Se bloquea la fila: dos ediciones simultáneas se forman en fila en lugar de mezclar métodos de pago
+  -- Se toma la fila desde el inicio, así el permiso y la validación se revisan con la fila ya bloqueada.
+  -- (Las ediciones simultáneas se formarían en fila de todos modos por el UPDATE de abajo: la prueba de
+  -- concurrencia lo confirmó con 5 mil ediciones de la misma cafetería; ver mutante M10.)
   PERFORM 1 FROM cafeteria c WHERE c.id_cafeteria = p_id_cafeteria FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'La cafetería no existe' USING ERRCODE = 'no_data_found';

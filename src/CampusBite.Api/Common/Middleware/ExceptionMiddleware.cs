@@ -24,6 +24,8 @@ public class ExceptionMiddleware
         }
         catch (DomainException ex)
         {
+            // JY-Sprint3 20/10/2026: un error pasajero le dice al front cuándo reintentar
+            if (ex is ServicioOcupadoException) context.Response.Headers.RetryAfter = "2";
             await ProblemaHttp.EscribirAsync(context, ObtenerStatusCode(ex), ex.Message);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -46,6 +48,7 @@ public class ExceptionMiddleware
         ForbiddenException => StatusCodes.Status403Forbidden,
         NotFoundException => StatusCodes.Status404NotFound,
         ConflictException => StatusCodes.Status409Conflict,
+        ServicioOcupadoException => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status400BadRequest
     };
 }

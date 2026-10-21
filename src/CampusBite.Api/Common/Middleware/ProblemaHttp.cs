@@ -28,6 +28,7 @@ public static class ProblemaHttp
         StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "NotFound",
         StatusCodes.Status409Conflict => "Conflict",
+        StatusCodes.Status503ServiceUnavailable => "ServiceUnavailable",
         _ => "InternalServerError"
     };
 }

@@ -22,4 +22,9 @@
     <ProjectReference Include="..\CampusBite.Domain\CampusBite.Domain.csproj" />
   </ItemGroup>
 
+  <!-- JY-Sprint3 20/10/2026: las pruebas de Infrastructure revisan la traducción de errores (método internal) -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="CampusBite.Infrastructure.Tests" />
+  </ItemGroup>
+
 </Project>

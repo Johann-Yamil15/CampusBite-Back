@@ -4,13 +4,16 @@ using System.Text.Json.Nodes;
 using CampusBite.Api.Tests.Seguridad;
 using CampusBite.Application.Cafeterias;
 using CampusBite.Application.Cafeterias.Dtos;
+using CampusBite.Application.Common.Dtos;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Cafeterias;
 using CampusBite.Domain.Common.Exceptions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace CampusBite.Api.Tests.Cafeterias;
 
@@ -150,6 +153,123 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
         Assert.Equal(_servicio.Error.Message, problema?.Detail);
     }
 
+    // Las pruebas de mutación mostraron que se podía borrar la llamada al servicio en DELETE/reactivar
+    // y todo seguía en verde: ahora se revisa que la acción llegue al servicio con el id correcto
+    [Fact]
+    public async Task Obtener_desactivar_y_reactivar_llaman_al_servicio_con_el_id_de_la_ruta()
+    {
+        var cliente = Cliente(RolUsuario.AdminSistema);
+        var id = Guid.NewGuid();
+
+        var detalle = await cliente.GetFromJsonAsync<JsonNode>($"/api/cafeterias/{id}");
+        Assert.Equal(id, _servicio.UltimoIdObtenido);
+        Assert.Equal(IdExistente.ToString(), detalle!["idCafeteria"]!.GetValue<string>());
+
+        await cliente.DeleteAsync($"/api/cafeterias/{id}");
+        Assert.Equal((id, false), _servicio.UltimoCambioActiva);
+
+        await cliente.PostAsync($"/api/cafeterias/{id}/reactivar", null);
+        Assert.Equal((id, true), _servicio.UltimoCambioActiva);
+    }
+
+    [Fact]
+    public async Task Listar_pasa_el_filtro_de_la_query_al_servicio_y_responde_la_pagina()
+    {
+        var respuesta = await Cliente(RolUsuario.AdminSistema)
+            .GetFromJsonAsync<JsonNode>("/api/cafeterias?incluirInactivas=true&buscar=norte&pagina=3&tamano=50");
+
+        var filtro = _servicio.UltimoFiltro!;
+        Assert.True(filtro.IncluirInactivas);
+        Assert.Equal("norte", filtro.Buscar);
+        Assert.Equal(3, filtro.Pagina);
+        Assert.Equal(50, filtro.Tamano);
+        Assert.Single(respuesta!["elementos"]!.AsArray());
+        Assert.Equal(120, respuesta["total"]!.GetValue<int>());
+        Assert.Equal(3, respuesta["totalPaginas"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task Listar_sin_parametros_usa_pagina_1_de_20()
+    {
+        await Cliente(RolUsuario.Alumno).GetAsync("/api/cafeterias");
+
+        Assert.Equal((1, 20, false), (_servicio.UltimoFiltro!.Pagina, _servicio.UltimoFiltro.Tamano, _servicio.UltimoFiltro.IncluirInactivas));
+    }
+
+    [Theory]
+    [InlineData("pagina=0", "Pagina")]
+    [InlineData("tamano=0", "Tamano")]
+    [InlineData("tamano=101", "Tamano")]
+    [InlineData("pagina=abc", "Pagina")]
+    public async Task Listar_con_pagina_o_tamano_invalidos_responde_400(string query, string campo)
+    {
+        var respuesta = await Cliente(RolUsuario.Alumno).GetAsync($"/api/cafeterias?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+        var problema = await respuesta.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+        Assert.Contains(problema!.Errors.Keys, k => k.Equals(campo, StringComparison.OrdinalIgnoreCase));
+        Assert.Null(_servicio.UltimoFiltro);
+    }
+
+    // Título y detalle de cada error: el front decide qué mostrar con ellos
+    [Theory]
+    [InlineData("BusinessRule", HttpStatusCode.BadRequest, "BadRequest")]
+    [InlineData("NotFound", HttpStatusCode.NotFound, "NotFound")]
+    [InlineData("Conflict", HttpStatusCode.Conflict, "Conflict")]
+    [InlineData("Ocupado", HttpStatusCode.ServiceUnavailable, "ServiceUnavailable")]
+    public async Task Cada_error_trae_su_titulo(string error, HttpStatusCode esperado, string titulo)
+    {
+        _servicio.Error = error switch
+        {
+            "BusinessRule" => new BusinessRuleException("La ubicación es obligatoria"),
+            "NotFound" => new NotFoundException("La cafetería no existe."),
+            "Ocupado" => new ServicioOcupadoException("El servicio está ocupado. Intenta de nuevo en unos segundos."),
+            _ => new ConflictException("Ya existe una cafetería con ese nombre")
+        };
+
+        var respuesta = await Cliente(RolUsuario.AdminSistema).GetAsync($"/api/cafeterias/{IdExistente}");
+
+        Assert.Equal(esperado, respuesta.StatusCode);
+        Assert.Equal(error == "Ocupado", respuesta.Headers.RetryAfter is not null);   // solo el 503 dice cuándo reintentar
+        var problema = await respuesta.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.Equal(titulo, problema?.Title);
+        Assert.Equal(_servicio.Error.Message, problema?.Detail);
+    }
+
+    // Un error inesperado responde 500 sin mostrar el mensaje interno fuera de Development
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("Production", false)]
+    public async Task Error_inesperado_responde_500_y_solo_muestra_el_detalle_en_desarrollo(string ambiente, bool muestraDetalle)
+    {
+        _servicio.Error = new InvalidOperationException("detalle interno: tabla cafeteria");
+        var logs = new LogsEnMemoria();
+        var fabrica = _api.WithWebHostBuilder(b =>
+        {
+            b.UseEnvironment(ambiente);
+            b.ConfigureLogging(l => l.AddProvider(logs));
+            b.ConfigureTestServices(s =>
+            {
+                s.RemoveAll<ICafeteriaService>();
+                s.AddSingleton<ICafeteriaService>(_servicio);
+            });
+        });
+        var (token, _) = fabrica.Services.CreateScope().ServiceProvider
+            .GetRequiredService<CampusBite.Application.Common.Security.ITokenService>()
+            .GenerarToken(Guid.NewGuid(), "prueba@ejemplo.test", RolUsuario.Alumno);
+        var cliente = fabrica.CreateClient();
+        cliente.DefaultRequestHeaders.Authorization = new("Bearer", token);
+
+        var respuesta = await cliente.GetAsync("/api/cafeterias");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, respuesta.StatusCode);
+        var problema = await respuesta.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.Equal("InternalServerError", problema?.Title);
+        Assert.Equal(muestraDetalle ? "detalle interno: tabla cafeteria" : "Ocurrió un error interno en el servidor.", problema?.Detail);
+        // Aunque al usuario no se le muestre, el error completo sí queda en el log para poder investigarlo
+        Assert.Contains(logs.Errores, e => e.Contains("/api/cafeterias") && e.Contains("detalle interno"));
+    }
+
     [Fact]
     public async Task Un_id_que_no_es_guid_responde_404_sin_llegar_al_servicio()
     {
@@ -162,6 +282,9 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
     {
         public Exception? Error { get; set; }
         public GuardarCafeteriaDto? UltimoDto { get; private set; }
+        public Guid? UltimoIdObtenido { get; private set; }
+        public ListarCafeteriasDto? UltimoFiltro { get; private set; }
+        public (Guid Id, bool Activa)? UltimoCambioActiva { get; private set; }
 
         private static CafeteriaDto Cafeteria(GuardarCafeteriaDto? dto = null) => new()
         {
@@ -172,9 +295,19 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
 
         private Task<T> Responder<T>(T valor) => Error is null ? Task.FromResult(valor) : Task.FromException<T>(Error);
 
-        public Task<IReadOnlyList<CafeteriaDto>> ListarAsync(bool incluirInactivas, CancellationToken ct = default) =>
-            Responder<IReadOnlyList<CafeteriaDto>>([Cafeteria()]);
-        public Task<CafeteriaDto> ObtenerAsync(Guid idCafeteria, CancellationToken ct = default) => Responder(Cafeteria());
+        public Task<PaginaDto<CafeteriaDto>> ListarAsync(ListarCafeteriasDto filtro, CancellationToken ct = default)
+        {
+            UltimoFiltro = filtro;
+            return Responder(new PaginaDto<CafeteriaDto>
+            {
+                Elementos = [Cafeteria()], Total = 120, Pagina = filtro.Pagina, Tamano = filtro.Tamano
+            });
+        }
+        public Task<CafeteriaDto> ObtenerAsync(Guid idCafeteria, CancellationToken ct = default)
+        {
+            UltimoIdObtenido = idCafeteria;
+            return Responder(Cafeteria());
+        }
         public Task<CafeteriaDto> CrearAsync(GuardarCafeteriaDto dto, CancellationToken ct = default)
         {
             UltimoDto = dto;
@@ -185,7 +318,15 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
             UltimoDto = dto;
             return Responder(Cafeteria(dto));
         }
-        public Task DesactivarAsync(Guid idCafeteria, CancellationToken ct = default) => Responder(true);
-        public Task ReactivarAsync(Guid idCafeteria, CancellationToken ct = default) => Responder(true);
+        public Task DesactivarAsync(Guid idCafeteria, CancellationToken ct = default)
+        {
+            UltimoCambioActiva = (idCafeteria, false);
+            return Responder(true);
+        }
+        public Task ReactivarAsync(Guid idCafeteria, CancellationToken ct = default)
+        {
+            UltimoCambioActiva = (idCafeteria, true);
+            return Responder(true);
+        }
     }
 }

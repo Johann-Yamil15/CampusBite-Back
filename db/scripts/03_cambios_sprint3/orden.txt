@@ -1,2 +1,3 @@
 # Módulo 03_cambios_sprint3: cambios de esquema de Sprint 3. Cada script revisa antes de cambiar.
 001_cafeteria_nombre_unico.sql
+002_indice_ordenes_en_curso.sql

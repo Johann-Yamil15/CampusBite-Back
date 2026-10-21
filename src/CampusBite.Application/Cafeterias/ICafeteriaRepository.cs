@@ -8,7 +8,10 @@ namespace CampusBite.Application.Cafeterias;
 // y BusinessRuleException (datos inválidos).
 public interface ICafeteriaRepository
 {
-    Task<IReadOnlyList<CafeteriaDto>> ListarAsync(Guid idActor, bool incluirInactivas, CancellationToken cancellationToken = default);
+    // Una página ordenada por nombre y el total que cumple el filtro (buscar: texto dentro del nombre o null)
+    Task<(IReadOnlyList<CafeteriaDto> Cafeterias, int Total)> ListarAsync(
+        Guid idActor, bool incluirInactivas, string? buscar, int limite, int desplazamiento,
+        CancellationToken cancellationToken = default);
 
     // null si no existe o si es inactiva y el actor no la administra
     Task<CafeteriaDto?> ObtenerAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default);

@@ -1,0 +1,14 @@
+{
+  "stryker-config": {
+    "project": "CampusBite.Api.csproj",
+    "coverage-analysis": "off",
+    "mutate": [
+      "**/Cafeterias/**/*.cs",
+      "**/Common/Security/**/*.cs",
+      "**/Common/Middleware/**/*.cs",
+      "**/Extensions/ServiceCollectionExtensions.cs"
+    ],
+    "reporters": [ "html", "json", "progress" ],
+    "thresholds": { "high": 90, "low": 75, "break": 0 }
+  }
+}

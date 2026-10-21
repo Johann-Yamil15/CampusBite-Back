@@ -1,6 +1,7 @@
 using CampusBite.Api.Common.Security;
 using CampusBite.Application.Cafeterias;
 using CampusBite.Application.Cafeterias.Dtos;
+using CampusBite.Application.Common.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,15 +24,17 @@ public class CafeteriasController : ControllerBase
         _cafeterias = cafeterias;
     }
 
+    // Paginado (?pagina=1&tamano=20, máximo 100) y con búsqueda por nombre (?buscar=norte).
     // Cualquier usuario con sesión ve las activas; incluirInactivas=true solo admin del sistema
     [HttpGet]
-    [ProducesResponseType<IReadOnlyList<CafeteriaDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<PaginaDto<CafeteriaDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IReadOnlyList<CafeteriaDto>>> Listar(
-        [FromQuery] bool incluirInactivas, CancellationToken cancellationToken)
+    public async Task<ActionResult<PaginaDto<CafeteriaDto>>> Listar(
+        [FromQuery] ListarCafeteriasDto filtro, CancellationToken cancellationToken)
     {
-        return Ok(await _cafeterias.ListarAsync(incluirInactivas, cancellationToken));
+        return Ok(await _cafeterias.ListarAsync(filtro, cancellationToken));
     }
 
     // Una inactiva solo la ven su encargado y el admin del sistema; para los demás es 404

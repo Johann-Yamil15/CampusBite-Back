@@ -25,7 +25,9 @@ db/
     versiones/               campusbite_V1.0.0.NNN.sql (local) y campusbite_V1.0.0.NNN_prod.sql (producción)
     historial.txt            una línea por versión (lo escribe build_schema.sh)
   changelog/changelog-master.xml   generado por build_schema.sh (no editar)
-  tests/smoke_test.sql       21 verificaciones; termina en ROLLBACK
+  tests/smoke_test.sql       23 verificaciones; termina en ROLLBACK
+  tests/mutacion/            pruebas de mutación (mutantes.txt + probar_mutantes.sh)
+  tests/estres/              carga de volumen, medición de procedimientos y concurrencia con pgbench
   docker-compose.yml         PostgreSQL 16 + Liquibase (local)
   00_crear_base_datos.sql    solo para PostgreSQL instalado a mano
 ```
@@ -79,7 +81,7 @@ valores. Las listas llegan como `JSONB`. Ejemplo en .NET: `src/CampusBite.Infras
 |---|---|---|
 | `sp_registrar_usuario(nombre, correo, hash, matricula, telefono, NULL)` | `p_id_usuario` | Crea un alumno. Correo o matrícula repetidos → `23505` |
 | `sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo` | Para el login. Todo `NULL` si el correo no existe |
-| `sp_menu_cafeteria(id_cafeteria \| NULL, NULL)` | `p_menu` (JSON) | Cafeterías activas con `metodos_pago` y `productos` |
+| `sp_menu_cafeteria(id_cafeteria, NULL)` | `p_menu` (JSON) | Menú de una cafetería activa con `metodos_pago` y `productos`. La cafetería es obligatoria (con `NULL` devolvía todas: 29 MB con 10 mil) |
 | `sp_crear_orden(id_usuario, id_cafeteria, recogida_en, metodo, items, notas, NULL)` | `p_id_orden` | Orden + detalle + pago. `items`: `[{"id_producto":"<uuid>","cantidad":2}]`. Valida alumno, horario, recogida ≥ 5 min, método aceptado, productos. Efectivo nace `confirmada`; tarjeta o transferencia, `pendiente` |
 | `sp_confirmar_pago(id_orden, referencia)` | — | Tarjeta o transferencia: pago `pagado` y orden `confirmada` |
 | `sp_cambiar_estado_orden(id_orden, nuevo, id_actor)` | — | `en_preparacion`, `lista` o `cancelada`. Solo el encargado de esa cafetería o `admin_sistema` |
@@ -88,7 +90,7 @@ valores. Las listas llegan como `JSONB`. Ejemplo en .NET: `src/CampusBite.Infras
 | `sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero, máximo 100 por página |
 | `sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo su encargado o `admin_sistema` (`42501` si no) |
 | `sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro, el más reciente primero. Solo `admin_sistema` |
-| `sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | TEC-08. Por nombre; las inactivas solo `admin_sistema` |
+| `sp_listar_cafeterias(id_actor, incluir_inactivas, buscar, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_cafeterias` (JSON) | TEC-08. Una página por nombre (1 a 100) y el total; `buscar` = texto dentro del nombre. Las inactivas solo `admin_sistema` |
 | `sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | TEC-08. `NULL` si no existe o es inactiva y el actor no la administra |
 | `sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | TEC-08. Solo `admin_sistema`. Nombre repetido (sin distinguir mayúsculas) → `23505` |
 | `sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | TEC-08. Su encargado o `admin_sistema`; reemplaza los métodos de pago |
@@ -123,7 +125,7 @@ avisa con `WARNING`. Si un usuario administraba más de una cafetería, la migra
 
 **El círculo orden → cafetería ← producto ← detalle → orden.** `orden.id_cafeteria` se podría deducir de sus productos.
 Se queda porque la orden la necesita antes de tener renglones (horario, método de pago) y porque la cola se busca por
-ella (`idx_orden_cola_cafeteria`). Para que esa copia no se desincronice, `fn_validar_detalle` revisa cada renglón, y
+ella (`idx_orden_en_curso`). Para que esa copia no se desincronice, `fn_validar_detalle` revisa cada renglón, y
 `fn_bloquear_cambio_cafeteria` impide cambiar después la cafetería de una orden o de un producto.
 
 | Dato | Decisión |
@@ -195,7 +197,7 @@ y se revisó `pg_stat_user_indexes`.
 | Índice | Decisión | Evidencia |
 |---|---|---|
 | `idx_orden_usuario_fecha` | Se queda | "Mis órdenes": `sp_mis_ordenes` tarda ~1.3 ms con 300 mil órdenes (Sprint 2, con el total desde `pago.monto`) |
-| `idx_orden_cola_cafeteria` (parcial) | Se queda | Cola de la cafetería; solo indexa órdenes activas. `sp_cola_cafeteria` ~10 ms con 40 activas entre 300 mil |
+| `idx_orden_en_curso` (parcial) | Reemplaza a `idx_orden_cola_cafeteria` (Sprint 3) | Solo indexa órdenes en curso (los 4 estados, ahora con `pendiente`). Lo usan la cola y la baja de cafeterías: la baja pasó de recorrer 500 mil órdenes (17 ms) a 0,1 ms |
 | `idx_producto_cafeteria` (parcial) | Se queda | Menú: >100 mil usos |
 | `UNIQUE` de `detalle_orden`, `pago.id_orden`, `usuario.correo` | Se quedan | Respaldan restricciones y las consultas más frecuentes |
 | `idx_historial_orden_fecha` | Se queda | Línea de tiempo de una orden: 0.6 ms entre 890 mil filas |
@@ -212,6 +214,46 @@ CREATE INDEX idx_orden_cafeteria_fecha ON orden (id_cafeteria, creado_en);
 -- Cancelar órdenes pendientes de pago vencidas: 35.7 ms -> ~0 ms
 CREATE INDEX idx_orden_pendientes ON orden (creado_en) WHERE estado = 'pendiente';
 ```
+
+## Pruebas de la base de datos
+
+| Script | Qué hace |
+|---|---|
+| `tests/smoke_test.sql` | 23 verificaciones (flujo completo, permisos, redundancia, fechas, bitácora, CRUD de cafeterías, paginación). Termina en `ROLLBACK` |
+| `tests/mutacion/probar_mutantes.sh` | Pruebas de mutación: mete cada error de `mutantes.txt` en una base sana y revisa que el smoke test lo detecte |
+| `tests/estres/carga_volumen.sql` | Llena una base de pruebas: 10 mil cafeterías, 500 mil órdenes, 1 millón de renglones, 2 millones de bitácora (1,4 GB, ~80 s) |
+| `tests/estres/medir_procedimientos.sql` | Mide cada procedimiento con la base llena (promedio y peor caso), como `app_backend` |
+| `tests/estres/concurrencia.sh` | pgbench con muchas sesiones: órdenes vs. bajas, ediciones y altas simultáneas; revisa que nada quede inconsistente |
+
+```bash
+PSQL="psql -U postgres" ./db/tests/mutacion/probar_mutantes.sh                 # o CONTENEDOR=... con docker/podman
+psql -U postgres -c "CREATE DATABASE estres" && psql -U postgres -d estres -f consolidado/versiones/<última>.sql
+psql -U postgres -d estres -f tests/estres/carga_volumen.sql && psql -U postgres -d estres -f tests/estres/medir_procedimientos.sql
+CONTENEDOR=campusbite-db ./db/tests/estres/concurrencia.sh                       # o PSQL=... PGBENCH=...
+MUTANTE=M14 CONTENEDOR=campusbite-db ./db/tests/estres/concurrencia.sh           # comprueba que detecta un mutante
+```
+
+**Mutación:** 27 de 27 mutantes de una sola sesión mueren con el smoke test. De los 3 de concurrencia, la prueba de
+concurrencia mata 2: sin el `FOR UPDATE` de la baja (M14) o sin el `FOR SHARE` de `sp_crear_orden` (M26) se colaron
+entre 11 y 15 órdenes en cafeterías ya dadas de baja. El tercero (M10, quitar el `FOR UPDATE` al editar) es
+equivalente: el `UPDATE` de la misma fila ya forma en fila las ediciones; 5 mil ediciones simultáneas quedaron consistentes.
+
+**Estrés** (10 mil cafeterías, 500 mil órdenes, como `app_backend`):
+
+| Procedimiento | Promedio | Peor |
+|---|---|---|
+| `sp_listar_cafeterias` (página de 20) | 3 ms | 13 ms |
+| `sp_obtener_cafeteria` | 0,1 ms | 1 ms |
+| `sp_crear_cafeteria` | 0,3 ms | 5 ms |
+| `sp_actualizar_cafeteria` | 0,7 ms | 2 ms |
+| `sp_cambiar_activa_cafeteria` | 0,2 ms | 3 ms |
+| `sp_crear_orden` | 6 ms | 45 ms |
+| `sp_bitacora_registro` (entre 2 millones) | 0,8 ms | 3 ms |
+
+Hallazgos corregidos: la lista sin paginar (3 MB, 150 ms), la baja que recorría todas las órdenes (faltaba
+`pendiente` en el índice parcial: ahora `idx_orden_en_curso`, de 17 ms a 0,1 ms) y `sp_menu_cafeteria(NULL)`
+(29 MB, 3 s). La prueba de idempotencia también encontró que `02_tablas/012_indices.sql` intentaba recrear el
+índice reemplazado con una columna ya renombrada: ahora no recrea índices que otro script sustituyó.
 
 ## Reglas
 

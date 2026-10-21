@@ -28,16 +28,17 @@ public static class Procedimientos
         Func<NpgsqlDataReader, T> leer, CancellationToken cancellationToken)
     {
         var conexion = (NpgsqlConnection)context.Database.GetDbConnection();
-        await context.Database.OpenConnectionAsync(cancellationToken);
         try
         {
+            // Dentro del try: si la base está saturada el error sale al abrir, y también se traduce
+            await context.Database.OpenConnectionAsync(cancellationToken);
             await using var comando = new NpgsqlCommand(sql, conexion);
             comando.Parameters.AddRange(parametros);
             await using var fila = await comando.ExecuteReaderAsync(cancellationToken);
             await fila.ReadAsync(cancellationToken);
             return leer(fila);
         }
-        catch (PostgresException ex) when (Traducir(ex) is { } error)
+        catch (Exception ex) when (ErrorDePostgres(ex) is { } pg && Traducir(pg) is { } error)
         {
             throw error;
         }
@@ -46,6 +47,11 @@ public static class Procedimientos
             await context.Database.CloseConnectionAsync();
         }
     }
+
+    // El error de PostgreSQL de una excepción: EF envuelve los errores al abrir la conexión (p. ej. "too many
+    // connections") en InvalidOperationException, así que también se busca adentro
+    internal static PostgresException? ErrorDePostgres(Exception ex) =>
+        ex as PostgresException ?? ex.InnerException as PostgresException;
 
     // CALL sin parámetros OUT
     public static Task EjecutarAsync(
@@ -65,6 +71,10 @@ public static class Procedimientos
     public static NpgsqlParameter Logico(string nombre, bool valor) =>
         new(nombre, NpgsqlDbType.Boolean) { Value = valor };
 
+    public static NpgsqlParameter Entero(string nombre, int valor) =>
+        new(nombre, NpgsqlDbType.Integer) { Value = valor };
+
+
     // Arreglo de ENUM: se manda como text[] y en el SQL se convierte con ::metodo_pago[]
     public static NpgsqlParameter Enumeraciones<TEnum>(string nombre, IEnumerable<TEnum> valores) where TEnum : struct, Enum =>
         new(nombre, NpgsqlDbType.Array | NpgsqlDbType.Text)
@@ -76,7 +86,7 @@ public static class Procedimientos
     // usuario (RAISE EXCEPTION ... USING ERRCODE). Los errores internos de PostgreSQL (CHECK, FK) no se muestran
     // tal cual: su texto trae nombres de tablas y restricciones.
     // Devuelve null si no es un error conocido: entonces sube como 500 y queda en el log.
-    private static DomainException? Traducir(PostgresException ex)
+    internal static DomainException? Traducir(PostgresException ex)
     {
         // "... at RAISE" en el contexto = lo escribió uno de nuestros procedimientos
         var propio = ex.Where?.Contains("at RAISE", StringComparison.Ordinal) == true;
@@ -90,6 +100,11 @@ public static class Procedimientos
             PostgresErrorCodes.ObjectInUse => new ConflictException(mensaje ?? "El recurso está en uso."),
             PostgresErrorCodes.CheckViolation => new BusinessRuleException(mensaje ?? "Los datos no cumplen las reglas."),
             PostgresErrorCodes.RaiseException => new BusinessRuleException(ex.MessageText),
+            // JY-Sprint3 20/10/2026: errores pasajeros (los encontró la prueba de carga): reintentar sirve -> 503
+            PostgresErrorCodes.TooManyConnections or PostgresErrorCodes.CannotConnectNow or
+            PostgresErrorCodes.LockNotAvailable or PostgresErrorCodes.QueryCanceled or
+            PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure
+                => new ServicioOcupadoException("El servicio está ocupado. Intenta de nuevo en unos segundos."),
             _ => null
         };
     }
