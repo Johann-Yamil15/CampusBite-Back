@@ -1,0 +1,4 @@
+# Módulo 01_base: extensiones, tipos y rol de la API. Orden EXACTO de ejecución.
+001_extensiones.sql
+002_tipos.sql
+003_rol_app_backend.sql

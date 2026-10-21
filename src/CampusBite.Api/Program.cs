@@ -4,6 +4,7 @@ using CampusBite.Api.Common.Settings;
 using CampusBite.Application;
 using CampusBite.Infrastructure;
 using CampusBite.Infrastructure.Persistence;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 
 // FB-Sprint1 02/10/2026: carga el archivo .env (si existe) sin sobrescribir variables de entorno reales
@@ -19,7 +20,10 @@ if (!string.IsNullOrEmpty(port))
 }
 
 // JJ-Sprint2 09/10/2026: errores de validación (400) con título en español y el mismo formato ProblemDetails
-builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+// JY-Sprint3 20/10/2026: los enums viajan como texto ("Efectivo"), no como número; no se aceptan números
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false)))
+    .ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
     {
