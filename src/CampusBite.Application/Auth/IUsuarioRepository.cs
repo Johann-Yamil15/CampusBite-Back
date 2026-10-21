@@ -10,4 +10,7 @@ public interface IUsuarioRepository
 
     // null si el correo no está registrado
     Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default);
+
+    // JJ-Sprint3 21/10/2026: TEC-12. No falla ni avisa si el correo no existe (a propósito, por seguridad)
+    Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default);
 }

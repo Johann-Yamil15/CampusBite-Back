@@ -38,6 +38,20 @@ public class AuthController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, respuesta);
     }
 
+    // JJ-Sprint3 21/10/2026: TEC-12. Recuperación simple (sin código de verificación); 200 siempre,
+    // exista o no el correo, para no revelar qué cuentas están registradas
+    [HttpPost("restablecer-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> RestablecerPassword([FromBody] RestablecerPasswordRequestDto dto, CancellationToken cancellationToken)
+    {
+        await _authService.RestablecerPasswordAsync(dto, cancellationToken);
+        return Ok(new { mensaje = "Si el correo está registrado, su contraseña ya se actualizó." });
+    }
+
     // JJ-Sprint2 09/10/2026: inicia sesión; mismo 401 para correo inexistente o contraseña incorrecta
     [HttpPost("login")]
     [AllowAnonymous]

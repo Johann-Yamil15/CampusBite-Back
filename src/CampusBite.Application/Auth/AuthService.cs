@@ -32,6 +32,14 @@ public class AuthService : IAuthService
         return CrearRespuesta(idUsuario, correo, RolUsuario.Alumno);
     }
 
+    // JJ-Sprint3 21/10/2026: TEC-12. No lanza error si el correo no existe: siempre "éxito" para no revelarlo
+    public async Task RestablecerPasswordAsync(RestablecerPasswordRequestDto dto, CancellationToken cancellationToken = default)
+    {
+        var correo = NormalizarCorreo(dto.Correo);
+        var hash = _passwordHasher.Hash(dto.NuevaPassword);
+        await _usuarios.RestablecerPasswordAsync(correo, hash, cancellationToken);
+    }
+
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto dto, CancellationToken cancellationToken = default)
     {
         var correo = NormalizarCorreo(dto.Correo);

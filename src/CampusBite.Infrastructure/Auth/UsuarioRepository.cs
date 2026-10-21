@@ -60,4 +60,11 @@ public class UsuarioRepository : IUsuarioRepository
                 },
             cancellationToken);
     }
+
+    // JJ-Sprint3 21/10/2026: TEC-12
+    public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_restablecer_password(@correo, @hash)",
+            [Texto("correo", correo), Texto("hash", contrasenaHash)],
+            cancellationToken);
 }

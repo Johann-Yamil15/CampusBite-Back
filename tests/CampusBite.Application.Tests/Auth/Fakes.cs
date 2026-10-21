@@ -32,6 +32,19 @@ internal class FakeUsuarioRepository : IUsuarioRepository
 
     public Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default)
         => Task.FromResult(Usuarios.GetValueOrDefault(correo));
+
+    // JJ-Sprint3 21/10/2026: TEC-12
+    public (string Correo, string Hash)? UltimoRestablecimiento { get; private set; }
+
+    public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default)
+    {
+        UltimoRestablecimiento = (correo, contrasenaHash);
+        if (Usuarios.TryGetValue(correo, out var credenciales))
+        {
+            credenciales.ContrasenaHash = contrasenaHash;
+        }
+        return Task.CompletedTask;
+    }
 }
 
 internal class FakePasswordHasher : IPasswordHasher

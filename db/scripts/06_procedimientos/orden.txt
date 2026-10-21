@@ -34,3 +34,5 @@
 017_sp_crear_cafeteria.sql
 018_sp_actualizar_cafeteria.sql
 019_sp_cambiar_activa_cafeteria.sql
+# TEC-12 (Sprint 3): recuperación de contraseña
+020_sp_restablecer_password.sql
