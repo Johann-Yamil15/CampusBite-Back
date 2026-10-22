@@ -52,8 +52,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 19, format('Se esperaban 19 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 19 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 20, format('Se esperaban 20 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 20 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
