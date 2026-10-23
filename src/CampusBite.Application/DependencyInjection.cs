@@ -1,4 +1,5 @@
 using CampusBite.Application.Auth;
+using CampusBite.Application.Cafeterias;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CampusBite.Application;
@@ -10,6 +11,9 @@ public static class DependencyInjection
     {
         // Auth
         services.AddScoped<IAuthService, AuthService>();
+
+        // Cafeterías (TEC-08)
+        services.AddScoped<ICafeteriaService, CafeteriaService>();
 
         return services;
     }
