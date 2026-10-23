@@ -1,5 +1,6 @@
 using CampusBite.Application.Auth;
 using CampusBite.Domain.Auth;
+using CampusBite.Domain.Cafeterias;
 using CampusBite.Domain.Common.Exceptions;
 using CampusBite.Infrastructure.Persistence;
 using static CampusBite.Infrastructure.Persistence.Procedimientos;
@@ -66,5 +67,20 @@ public class UsuarioRepository : IUsuarioRepository
         _context.EjecutarAsync(
             "CALL sp_restablecer_password(@correo, @hash)",
             [Texto("correo", correo), Texto("hash", contrasenaHash)],
+            cancellationToken);
+
+    // JJ-Sprint3 22/10/2026: TEC-11. El procedimiento ya manda el mensaje correcto para cada 23505 (correo o nombre
+    // de cafetería) y Procedimientos lo convierte en ConflictException; no hace falta reescribirlo aquí
+    public Task<Guid> RegistrarCafeteriaAsync(
+        string nombreEncargado, string correo, string contrasenaHash, string? telefono,
+        string nombreCafeteria, string ubicacion, bool esDelCampus, string puntoEntrega,
+        IReadOnlyList<MetodoPago> metodos, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_autorregistrar_cafeteria(@encargado, @correo, @hash, @telefono, " +
+            "@cafeteria, @ubicacion, @campus, @punto, @metodos::metodo_pago[], NULL)",
+            [Texto("encargado", nombreEncargado), Texto("correo", correo), Texto("hash", contrasenaHash),
+             Texto("telefono", telefono), Texto("cafeteria", nombreCafeteria), Texto("ubicacion", ubicacion),
+             Logico("campus", esDelCampus), Texto("punto", puntoEntrega), Enumeraciones("metodos", metodos)],
+            fila => fila.GetGuid(0),
             cancellationToken);
 }

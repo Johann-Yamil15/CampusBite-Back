@@ -1,6 +1,7 @@
 using CampusBite.Application.Auth;
 using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
+using CampusBite.Domain.Cafeterias;
 
 namespace CampusBite.Application.Tests.Auth;
 
@@ -44,6 +45,32 @@ internal class FakeUsuarioRepository : IUsuarioRepository
             credenciales.ContrasenaHash = contrasenaHash;
         }
         return Task.CompletedTask;
+    }
+
+    // JJ-Sprint3 22/10/2026: TEC-11
+    public Exception? ErrorAlRegistrarCafeteria { get; set; }
+    public (string NombreEncargado, string Correo, string Hash, string? Telefono, string NombreCafeteria,
+            string Ubicacion, bool EsDelCampus, string PuntoEntrega, IReadOnlyList<MetodoPago> Metodos)? UltimoRegistroCafeteria
+    { get; private set; }
+
+    public Task<Guid> RegistrarCafeteriaAsync(
+        string nombreEncargado, string correo, string contrasenaHash, string? telefono,
+        string nombreCafeteria, string ubicacion, bool esDelCampus, string puntoEntrega,
+        IReadOnlyList<MetodoPago> metodos, CancellationToken cancellationToken = default)
+    {
+        if (ErrorAlRegistrarCafeteria is not null)
+        {
+            throw ErrorAlRegistrarCafeteria;
+        }
+
+        UltimoRegistroCafeteria = (nombreEncargado, correo, contrasenaHash, telefono, nombreCafeteria,
+                                   ubicacion, esDelCampus, puntoEntrega, metodos);
+        var id = Guid.NewGuid();
+        Usuarios[correo] = new CredencialesUsuario
+        {
+            IdUsuario = id, IdRol = RolUsuario.AdminCafeteria, ContrasenaHash = contrasenaHash, Activo = true
+        };
+        return Task.FromResult(id);
     }
 }
 

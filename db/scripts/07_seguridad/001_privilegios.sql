@@ -29,7 +29,8 @@ GRANT EXECUTE ON PROCEDURE
   sp_crear_cafeteria,
   sp_actualizar_cafeteria,
   sp_cambiar_activa_cafeteria,
-  sp_restablecer_password
+  sp_restablecer_password,
+  sp_autorregistrar_cafeteria
 TO app_backend;
 -- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria.
 

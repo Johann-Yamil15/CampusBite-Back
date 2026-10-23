@@ -79,7 +79,9 @@ public static class Procedimientos
     private static DomainException? Traducir(PostgresException ex)
     {
         // "... at RAISE" en el contexto = lo escribió uno de nuestros procedimientos
-        var propio = ex.Where?.Contains("at RAISE", StringComparison.Ordinal) == true;
+        // JJ-Sprint3 22/10/2026: el contexto sale en el idioma del servidor ("at RAISE" en Neon, "en RAISE" en un
+        // PostgreSQL en español); RAISE no se traduce, así que se busca solo esa palabra
+        var propio = ex.Where?.Contains(" RAISE", StringComparison.Ordinal) == true;
         var mensaje = propio ? ex.MessageText : null;
 
         return ex.SqlState switch

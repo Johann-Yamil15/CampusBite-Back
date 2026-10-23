@@ -32,6 +32,22 @@ public class AuthService : IAuthService
         return CrearRespuesta(idUsuario, correo, RolUsuario.Alumno);
     }
 
+    // JJ-Sprint3 22/10/2026: TEC-11. Mismo patrón que RegistrarAsync, pero el usuario nace AdminCafeteria y encargado
+    // de la cafetería que se crea con él (el procedimiento hace las dos cosas en una sola transacción)
+    public async Task<AuthResponseDto> RegistrarCafeteriaAsync(RegistroCafeteriaRequestDto dto, CancellationToken cancellationToken = default)
+    {
+        var correo = NormalizarCorreo(dto.Correo);
+        var hash = _passwordHasher.Hash(dto.Password);
+        var telefono = string.IsNullOrWhiteSpace(dto.Telefono) ? null : dto.Telefono.Trim();
+
+        var idUsuario = await _usuarios.RegistrarCafeteriaAsync(
+            dto.NombreEncargado.Trim(), correo, hash, telefono,
+            dto.NombreCafeteria.Trim(), dto.Ubicacion.Trim(), dto.EsDelCampus!.Value, dto.PuntoEntrega.Trim(),
+            dto.MetodosPago.Distinct().ToList(), cancellationToken);
+
+        return CrearRespuesta(idUsuario, correo, RolUsuario.AdminCafeteria);
+    }
+
     // JJ-Sprint3 21/10/2026: TEC-12. No lanza error si el correo no existe: siempre "éxito" para no revelarlo
     public async Task RestablecerPasswordAsync(RestablecerPasswordRequestDto dto, CancellationToken cancellationToken = default)
     {

@@ -38,6 +38,22 @@ public class AuthController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, respuesta);
     }
 
+    // JJ-Sprint3 22/10/2026: TEC-11. Autorregistro público de un negocio: crea al encargado (AdminCafeteria) y su
+    // cafetería, y devuelve su token como /registro. La autorización real está en la BD (sp_autorregistrar_cafeteria)
+    [HttpPost("registro-cafeteria")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
+    [ProducesResponseType<AuthResponseDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<AuthResponseDto>> RegistrarCafeteria(
+        [FromBody] RegistroCafeteriaRequestDto dto, CancellationToken cancellationToken)
+    {
+        var respuesta = await _authService.RegistrarCafeteriaAsync(dto, cancellationToken);
+        return StatusCode(StatusCodes.Status201Created, respuesta);
+    }
+
     // JJ-Sprint3 21/10/2026: TEC-12. Recuperación simple (sin código de verificación); 200 siempre,
     // exista o no el correo, para no revelar qué cuentas están registradas
     [HttpPost("restablecer-password")]

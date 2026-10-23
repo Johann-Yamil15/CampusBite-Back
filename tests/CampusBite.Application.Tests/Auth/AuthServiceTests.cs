@@ -1,6 +1,7 @@
 using CampusBite.Application.Auth;
 using CampusBite.Application.Auth.Dtos;
 using CampusBite.Domain.Auth;
+using CampusBite.Domain.Cafeterias;
 using CampusBite.Domain.Common.Exceptions;
 
 namespace CampusBite.Application.Tests.Auth;
@@ -97,5 +98,54 @@ public class AuthServiceTests
         // Verificar aunque el correo no exista evita revelar por tiempo qué correos están registrados
         Assert.Equal(1, _hasher.Verificaciones);
         Assert.Equal("Correo o contraseña incorrectos.", error.Message);
+    }
+
+    // JJ-Sprint3 22/10/2026: TEC-11. Autorregistro de un negocio
+    private static RegistroCafeteriaRequestDto NuevoNegocio() => new()
+    {
+        NombreEncargado = "  Ana López ", Correo = "  Ana@Negocio.MX ", Password = "Password123", Telefono = "   ",
+        NombreCafeteria = "  Café Norte ", Ubicacion = " Edificio K ", EsDelCampus = true, PuntoEntrega = " Ventanilla 2 ",
+        MetodosPago = [MetodoPago.Efectivo, MetodoPago.Tarjeta, MetodoPago.Efectivo]
+    };
+
+    [Fact]
+    public async Task RegistrarCafeteria_NormalizaDatosYDevuelveAdminCafeteriaConToken()
+    {
+        var respuesta = await _servicio.RegistrarCafeteriaAsync(NuevoNegocio());
+
+        var registro = _repositorio.UltimoRegistroCafeteria!.Value;
+        Assert.Equal("Ana López", registro.NombreEncargado);
+        Assert.Equal("ana@negocio.mx", registro.Correo);
+        Assert.Equal("hash:Password123", registro.Hash);
+        Assert.Null(registro.Telefono);
+        Assert.Equal("Café Norte", registro.NombreCafeteria);
+        Assert.Equal("Edificio K", registro.Ubicacion);
+        Assert.True(registro.EsDelCampus);
+        Assert.Equal("Ventanilla 2", registro.PuntoEntrega);
+        Assert.Equal([MetodoPago.Efectivo, MetodoPago.Tarjeta], registro.Metodos);   // sin repetidos
+
+        Assert.Equal("ana@negocio.mx", respuesta.Correo);
+        Assert.Equal(nameof(RolUsuario.AdminCafeteria), respuesta.Rol);
+        Assert.Contains(nameof(RolUsuario.AdminCafeteria), respuesta.Token);       // el token se emite con el rol nuevo
+    }
+
+    [Fact]
+    public async Task RegistrarCafeteria_CorreoONombreRepetido_PropagaConflict()
+    {
+        _repositorio.ErrorAlRegistrarCafeteria = new ConflictException("Ya existe una cafetería con el nombre \"Café Norte\"");
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => _servicio.RegistrarCafeteriaAsync(NuevoNegocio()));
+
+        Assert.Contains("Café Norte", error.Message);
+    }
+
+    [Fact]
+    public async Task RegistrarCafeteria_ElEncargadoPuedeIniciarSesionDespues()
+    {
+        await _servicio.RegistrarCafeteriaAsync(NuevoNegocio());
+
+        var sesion = await _servicio.LoginAsync(new LoginRequestDto { Correo = "ANA@negocio.mx", Password = "Password123" });
+
+        Assert.Equal(nameof(RolUsuario.AdminCafeteria), sesion.Rol);
     }
 }

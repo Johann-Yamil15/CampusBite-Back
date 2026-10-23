@@ -218,8 +218,22 @@ Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato Pr
 | Método y ruta | Auth | Cuerpo | Respuestas |
 |---|---|---|---|
 | `POST /api/auth/registro` | No | `nombre`, `correo`, `password`, `matricula?`, `telefono?` | 201 · 400 · 409 · 429 |
+| `POST /api/auth/registro-cafeteria` | No | `nombreEncargado`, `correo`, `password`, `telefono?`, `nombreCafeteria`, `ubicacion`, `esDelCampus`, `puntoEntrega`, `metodosPago` | 201 · 400 · 409 · 429 |
 | `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 429 |
 | `GET /api/auth/me` | Bearer (cualquier rol) | — | 200 · 401 |
+
+**Registro de negocio** (TEC-11): un dueño crea su cuenta y su cafetería en un solo paso. El usuario nace
+`AdminCafeteria` y encargado de esa cafetería, y recibe su token como en `/registro`. Todo ocurre en una transacción
+(`sp_autorregistrar_cafeteria`): si el correo o el nombre de la cafetería ya existen (este sin distinguir
+mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nada creado a medias. Es distinto de
+`POST /api/cafeterias`, donde el `AdminSistema` da de alta una cafetería sin encargado.
+
+```json
+// POST /api/auth/registro-cafeteria
+{ "nombreEncargado": "Ana López", "correo": "ana@negocio.mx", "password": "Password123", "telefono": null,
+  "nombreCafeteria": "Café Norte", "ubicacion": "Edificio K", "esDelCampus": true,
+  "puntoEntrega": "Ventanilla 2", "metodosPago": ["Efectivo", "Tarjeta"] }
+```
 
 **Registro**: crea siempre un `Alumno` y ya devuelve el token, así que el front puede entrar directo sin pedir login.
 

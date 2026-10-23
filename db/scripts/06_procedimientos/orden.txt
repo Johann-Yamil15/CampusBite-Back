@@ -36,3 +36,5 @@
 019_sp_cambiar_activa_cafeteria.sql
 # TEC-12 (Sprint 3): recuperación de contraseña
 020_sp_restablecer_password.sql
+# TEC-11 (Sprint 3): autorregistro de un negocio (encargado + cafetería)
+021_sp_autorregistrar_cafeteria.sql

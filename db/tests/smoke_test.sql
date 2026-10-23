@@ -52,8 +52,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 20, format('Se esperaban 20 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 20 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 21, format('Se esperaban 21 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 21 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
@@ -465,5 +465,52 @@ BEGIN
   RAISE NOTICE 'OK 21: CRUD de cafeterías con permisos, nombre único, baja lógica protegida y bitácora';
 END $$;
 
+-- 22. Autorregistro de un negocio (TEC-11) -----------------------------------------
+-- JJ-Sprint3 22/10/2026: el dueño nace admin_cafeteria y encargado de su cafetería; correo o nombre repetidos
+-- dan 23505 sin dejar usuario ni cafetería a medias; la bitácora registra al propio encargado como autor.
+DO $$
+DECLARE
+  v_id   UUID;
+  v_otro UUID;
+  v_caf  UUID;
+  v_rol  SMALLINT;
+  v_ok   BOOLEAN;
+BEGIN
+  SET LOCAL ROLE app_backend;
+  CALL sp_autorregistrar_cafeteria('  Dueña Prueba ', 'duena@negocio.test', '$2a$12$hashdeprueba', NULL,
+                                   '  Café del Dueño ', 'Local 4', false, 'Mostrador',
+                                   ARRAY['efectivo','tarjeta','efectivo']::metodo_pago[], v_id);
+
+  -- Correo repetido (sin distinguir mayúsculas) y nombre de cafetería repetido: 23505 cada uno
+  v_ok := false;
+  BEGIN CALL sp_autorregistrar_cafeteria('Otro Dueño', 'DUENA@negocio.test', 'x', NULL, 'Café Huérfano',
+                                         'L', true, 'M', ARRAY['efectivo']::metodo_pago[], v_otro);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Un correo repetido debió rechazarse con 23505';
+  v_ok := false;
+  BEGIN CALL sp_autorregistrar_cafeteria('Otro Dueño', 'otro@negocio.test', 'x', NULL, 'CAFÉ DEL DUEÑO',
+                                         'L', true, 'M', ARRAY['efectivo']::metodo_pago[], v_otro);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Un nombre de cafetería repetido debió rechazarse con 23505';
+  v_ok := false;
+  BEGIN CALL sp_autorregistrar_cafeteria('Otro Dueño', 'otro@negocio.test', 'x', NULL, 'Sin Métodos',
+                                         'L', true, 'M', '{}'::metodo_pago[], v_otro);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Sin métodos de pago debió rechazarse con check_violation';
+  RESET ROLE;
+
+  SELECT id_rol, id_cafeteria INTO v_rol, v_caf FROM usuario WHERE id_usuario = v_id;
+  ASSERT v_rol = 2 AND v_caf IS NOT NULL, 'El dueño debe nacer admin_cafeteria y encargado de su cafetería';
+  ASSERT (SELECT nombre FROM cafeteria WHERE id_cafeteria = v_caf) = 'Café del Dueño', 'El nombre se guarda recortado';
+  ASSERT (SELECT nombre FROM usuario WHERE id_usuario = v_id) = 'Dueña Prueba', 'El nombre del encargado se recorta';
+  ASSERT (SELECT count(*) FROM cafeteria_metodo_pago WHERE id_cafeteria = v_caf) = 2, 'Los métodos repetidos se guardan una vez';
+  ASSERT NOT EXISTS (SELECT 1 FROM cafeteria WHERE nombre IN ('Café Huérfano', 'Sin Métodos')), 'No deben quedar cafeterías huérfanas';
+  ASSERT NOT EXISTS (SELECT 1 FROM usuario WHERE correo = 'otro@negocio.test'), 'No deben quedar usuarios huérfanos';
+  ASSERT EXISTS (SELECT 1 FROM bitacora WHERE tabla = 'cafeteria' AND id_registro = v_caf::text
+                   AND operacion = 'I' AND cambiado_por = v_id), 'La bitácora debe registrar al encargado como autor del alta';
+
+  RAISE NOTICE 'OK 22: autorregistro de negocio atómico, encargado enlazado, 23505 por correo o nombre y bitácora';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 21 de 21 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 22 de 22 OK (transacción revertida)'
