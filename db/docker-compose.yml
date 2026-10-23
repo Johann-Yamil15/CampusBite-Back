@@ -1,7 +1,8 @@
-# CampusBite · PostgreSQL en contenedor + Liquibase
+# CampusBite · PostgreSQL en contenedor + Liquibase (SOLO desarrollo local)
 #   docker compose up -d db            -> solo la base de datos
-#   docker compose run --rm liquibase  -> aplica las migraciones pendientes
+#   docker compose run --rm liquibase  -> aplica los scripts nuevos o cambiados (contexto dev)
 #   docker compose down -v             -> borra contenedores Y datos (volumen)
+# Producción (Neon) no usa Liquibase: se actualiza con db/consolidado/versiones/*_prod.sql
 name: campusbite
 
 services:
@@ -30,11 +31,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # JY-Sprint2 09/10/2026: solo local. El changelog lo genera consolidado/build_schema.sh y apunta a scripts/
     volumes:
-      - ./changelog:/liquibase/changelog:ro
+      - ./changelog:/liquibase/db/changelog:ro
+      - ./scripts:/liquibase/db/scripts:ro
     command:
-      - --search-path=/liquibase/changelog
-      - --changelog-file=changelog-master.xml
+      - --search-path=/liquibase/db
+      - --changelog-file=changelog/changelog-master.xml
       - --url=jdbc:postgresql://db:5432/${DB_NAME:-campusbite}
       - --username=${DB_USER:-postgres}
       - --password=${DB_PASSWORD}
