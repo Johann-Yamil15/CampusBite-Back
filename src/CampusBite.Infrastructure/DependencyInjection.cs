@@ -1,6 +1,8 @@
 using CampusBite.Application.Auth;
+using CampusBite.Application.Cafeterias;
 using CampusBite.Application.Common.Security;
 using CampusBite.Infrastructure.Auth;
+using CampusBite.Infrastructure.Cafeterias;
 using CampusBite.Infrastructure.Persistence;
 using CampusBite.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +25,7 @@ public static class DependencyInjection
 
         // Repositorios por módulo
         services.AddScoped<IUsuarioRepository, UsuarioRepository>();
+        services.AddScoped<ICafeteriaRepository, CafeteriaRepository>();
 
         return services;
     }

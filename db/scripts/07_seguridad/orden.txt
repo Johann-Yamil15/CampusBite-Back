@@ -1,0 +1,5 @@
+# Módulo 07_seguridad: permisos mínimos. Va al final para cubrir todo lo que crearon los módulos anteriores.
+# liquibase: runAlways
+001_privilegios.sql
+002_limites_rol_api.sql
+003_rls.sql

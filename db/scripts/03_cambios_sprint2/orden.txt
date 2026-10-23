@@ -1,0 +1,9 @@
+# Módulo 03_cambios_sprint2: lleva una base de V1.0.0.001 (o una recién creada por 02_tablas) al
+# modelo de Sprint 2 sin perder datos. Cada script revisa antes de cambiar, así que se puede repetir.
+000_retirar_objetos_v1.sql
+001_depurar_indices.sql
+002_metodos_pago_cafeteria.sql
+003_personal_cafeteria.sql
+004_quitar_total_orden.sql
+005_fechas.sql
+006_fechas_en_todas_las_tablas.sql

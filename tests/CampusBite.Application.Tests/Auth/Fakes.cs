@@ -1,6 +1,7 @@
 using CampusBite.Application.Auth;
 using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
+using CampusBite.Domain.Cafeterias;
 
 namespace CampusBite.Application.Tests.Auth;
 
@@ -32,6 +33,45 @@ internal class FakeUsuarioRepository : IUsuarioRepository
 
     public Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default)
         => Task.FromResult(Usuarios.GetValueOrDefault(correo));
+
+    // JJ-Sprint3 21/10/2026: TEC-12
+    public (string Correo, string Hash)? UltimoRestablecimiento { get; private set; }
+
+    public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default)
+    {
+        UltimoRestablecimiento = (correo, contrasenaHash);
+        if (Usuarios.TryGetValue(correo, out var credenciales))
+        {
+            credenciales.ContrasenaHash = contrasenaHash;
+        }
+        return Task.CompletedTask;
+    }
+
+    // JJ-Sprint3 22/10/2026: TEC-11
+    public Exception? ErrorAlRegistrarCafeteria { get; set; }
+    public (string NombreEncargado, string Correo, string Hash, string? Telefono, string NombreCafeteria,
+            string Ubicacion, bool EsDelCampus, string PuntoEntrega, IReadOnlyList<MetodoPago> Metodos)? UltimoRegistroCafeteria
+    { get; private set; }
+
+    public Task<Guid> RegistrarCafeteriaAsync(
+        string nombreEncargado, string correo, string contrasenaHash, string? telefono,
+        string nombreCafeteria, string ubicacion, bool esDelCampus, string puntoEntrega,
+        IReadOnlyList<MetodoPago> metodos, CancellationToken cancellationToken = default)
+    {
+        if (ErrorAlRegistrarCafeteria is not null)
+        {
+            throw ErrorAlRegistrarCafeteria;
+        }
+
+        UltimoRegistroCafeteria = (nombreEncargado, correo, contrasenaHash, telefono, nombreCafeteria,
+                                   ubicacion, esDelCampus, puntoEntrega, metodos);
+        var id = Guid.NewGuid();
+        Usuarios[correo] = new CredencialesUsuario
+        {
+            IdUsuario = id, IdRol = RolUsuario.AdminCafeteria, ContrasenaHash = contrasenaHash, Activo = true
+        };
+        return Task.FromResult(id);
+    }
 }
 
 internal class FakePasswordHasher : IPasswordHasher
