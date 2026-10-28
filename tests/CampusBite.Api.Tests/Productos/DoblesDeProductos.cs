@@ -41,7 +41,11 @@ internal sealed class RepositorioFalso : IProductoRepository
     public List<ProductoDto> Productos { get; } = [];
     public List<CategoriaDto> Categorias { get; } = [];
 
-    public Task<ProductoDto> CrearAsync(
+    public Task<ProductoDto?> ObtenerAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Productos.FirstOrDefault(p => p.IdCafeteria == idCafeteria && p.IdProducto == idProducto));
+
+    public Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default)
     {
@@ -49,14 +53,13 @@ internal sealed class RepositorioFalso : IProductoRepository
 
         UltimosDatos = datos;
         ImagenActual = imagenUrl;
-        var producto = new ProductoDto
+        Productos.Add(new ProductoDto
         {
             IdProducto = idProducto, IdCafeteria = idCafeteria, IdCategoria = datos.IdCategoria, Nombre = datos.Nombre,
             Descripcion = datos.Descripcion, Precio = datos.Precio, ImagenUrl = imagenUrl, Disponible = datos.Disponible,
             CreadoEn = DateTimeOffset.UtcNow, ActualizadoEn = DateTimeOffset.UtcNow
-        };
-        Productos.Add(producto);
-        return Task.FromResult(producto);
+        });
+        return Task.CompletedTask;
     }
 
     public Task<string?> ActualizarImagenAsync(
@@ -92,12 +95,12 @@ internal sealed class RepositorioFalso : IProductoRepository
         return Task.CompletedTask;
     }
 
-    public Task EliminarAsync(
+    public Task<string?> EliminarAsync(
         Guid idProducto, Guid idActor, CancellationToken cancellationToken = default)
     {
         if (Error is not null) throw Error;
         Eliminado = true;
-        return Task.CompletedTask;
+        return Task.FromResult(ImagenActual);
     }
 
     public Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(

@@ -7,7 +7,7 @@ public class ProductoDto
     public Guid IdCafeteria { get; init; }
     public Guid? IdCategoria { get; init; }
     public string? Categoria { get; init; }
-    public string Nombre { get; init; } = string.Empty;
+    public required string Nombre { get; init; }
     public string? Descripcion { get; init; }
     public decimal Precio { get; init; }
     public string? ImagenUrl { get; init; }

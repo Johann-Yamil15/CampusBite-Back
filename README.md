@@ -106,7 +106,15 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
 | `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
 | `CALL sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | Baja lógica o reactivación. Solo `admin_sistema`. Con órdenes en curso → `55006` |
-| `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url, NULL)` | `p_producto` (JSON) | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
+| `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url)` | — | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
+| `CALL sp_obtener_producto(id_cafeteria, id_producto, id_actor, NULL)` | `p_producto` (JSON o `NULL`) | Un producto con el nombre de su categoría; `NULL` si no existe, es de otra cafetería, o no está disponible / su cafetería está inactiva y el actor no la administra |
+| `CALL sp_listar_productos_cafeteria(id_cafeteria, id_actor, NULL)` | `p_productos` (JSON) | Todos los productos (disponibles o no) por categoría y nombre. Su encargado o `admin_sistema` |
+| `CALL sp_actualizar_producto(id_producto, id_actor, id_categoria, nombre, descripcion, precio, disponible)` | — | Edita un producto (no la imagen). Nombre repetido → `23505` |
+| `CALL sp_toggle_disponible_producto(id_producto, disponible, id_actor)` | — | Solo cambia la disponibilidad |
+| `CALL sp_eliminar_producto(id_producto, id_actor, NULL)` | `p_imagen_url` (o `NULL`) | Borra el producto y devuelve su imagen para borrar el blob. Si aparece en alguna orden (activa o terminada) → `55006` |
+| `CALL sp_listar_categorias(id_cafeteria, NULL)` | `p_categorias` (JSON) | Categorías de la cafetería por nombre; cualquier usuario |
+| `CALL sp_crear_categoria(id_cafeteria, id_actor, nombre, NULL)` | `p_id_categoria` | Nueva categoría. Nombre repetido → `23505` |
+| `CALL sp_eliminar_categoria(id_categoria, id_actor)` | — | Borra la categoría; sus productos quedan con `id_categoria = NULL` |
 | `CALL sp_actualizar_imagen_producto(id_cafeteria, id_producto, id_actor, imagen_url, NULL)` | `p_imagen_anterior` | Guarda la URL de la imagen y devuelve la que tenía antes (para borrar ese blob). Su encargado o `admin_sistema`; producto de otra cafetería → `P0002` |
 
 Al cancelar una orden, su pago pasa solo a `reembolsado` (si ya estaba pagado) o `cancelado`.
@@ -237,6 +245,25 @@ JPEG, PNG o WebP, máximo 5 MB, contenido real verificado, mismos tiempos y rein
 Responde lo mismo que el cambio de imagen (400, 403, 404, 413, 503, 504) y además **409** si ya existe un producto
 con ese nombre. Si la imagen no es válida no se crea el producto; si la BD rechaza el alta, se borra la imagen que
 ya se había subido. Un alta repetida por mala señal no duplica: la segunda responde 409.
+
+Igual que en cafeterías, `sp_crear_producto` solo guarda y la API lee el producto con `sp_obtener_producto` para
+responder; el 201 trae `Location` al GET del producto.
+
+`GET /api/cafeterias/{idCafeteria}/productos/{idProducto}` · cualquier usuario con sesión. Devuelve el mismo objeto
+que el alta. Un producto no disponible, o de una cafetería inactiva, solo lo ven su encargado y `AdminSistema`; para
+los demás es **404**, igual que si no existiera o fuera de otra cafetería.
+
+Resto del CRUD (base `/api/cafeterias/{idCafeteria}`; todo menos `GET .../categorias` es solo `PersonalCafeteria`):
+
+| Método y ruta | Qué hace | Respuestas |
+|---|---|---|
+| `GET /productos` | Todos los productos de la cafetería, disponibles o no (panel del encargado) | 200, 403 |
+| `PUT /productos/{idProducto}` | Edita nombre, descripción, precio, categoría y disponibilidad (JSON, mismas reglas que el alta). La imagen se cambia con `POST .../imagen` | 204, 400, 403, 404, 409 |
+| `PATCH /productos/{idProducto}/disponible` | Cuerpo `true` o `false` | 204, 403, 404 |
+| `DELETE /productos/{idProducto}` | Lo borra y también su imagen en Azure. **409** si aparece en alguna orden (activa o en el historial): en ese caso se desactiva | 204, 403, 404, 409 |
+| `GET /categorias` | Categorías de la cafetería (cualquier usuario con sesión) | 200 |
+| `POST /categorias` | `{ "nombre": "Bebidas" }`, 2 a 60 caracteres, único en la cafetería | 201, 400, 403, 409 |
+| `DELETE /categorias/{idCategoria}` | Sus productos quedan sin categoría | 204, 403, 404 |
 
 ## Imagen de producto (TEC-10)
 `POST /api/cafeterias/{idCafeteria}/productos/{idProducto}/imagen` · `multipart/form-data` con el campo `archivo`.

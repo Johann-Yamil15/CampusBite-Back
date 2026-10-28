@@ -1,9 +1,12 @@
 -- JY-Sprint4 27/10/2026: TEC-09. Alta de un producto en el menú de una cafetería. Su encargado o admin_sistema.
 --   CALL sp_crear_producto(<id_producto>, <id_cafeteria>, <id_actor>, <id_categoria o NULL>, 'Chilaquiles verdes',
---                          'Con pollo y crema', 55.00, true, 'https://.../productos/<id_producto>_<fecha>.webp', NULL);
+--                          'Con pollo y crema', 55.00, true, 'https://.../productos/<id_producto>_<fecha>.webp');
 -- p_id_producto lo genera la API: la imagen se sube a Azure antes del alta y su nombre lleva ese id.
 -- p_imagen_url puede ser NULL (producto sin foto). Nombre repetido en la cafetería (sin distinguir mayúsculas) -> 23505.
--- p_producto: el producto creado como JSON (con el nombre de su categoría).
+-- Solo guarda, igual que los demás sp_crear_*: la API ya tiene el id y lee el producto con sp_obtener_producto.
+-- La primera versión devolvía el producto como JSONB (OUT p_producto); se quita esa firma.
+DROP PROCEDURE IF EXISTS sp_crear_producto(UUID, UUID, UUID, UUID, VARCHAR, VARCHAR, NUMERIC, BOOLEAN, VARCHAR, JSONB);
+
 CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_id_producto  UUID,
   IN  p_id_cafeteria UUID,
@@ -13,8 +16,7 @@ CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_descripcion  VARCHAR,
   IN  p_precio       NUMERIC,
   IN  p_disponible   BOOLEAN,
-  IN  p_imagen_url   VARCHAR,
-  OUT p_producto     JSONB
+  IN  p_imagen_url   VARCHAR
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
@@ -34,14 +36,6 @@ BEGIN
   INSERT INTO producto (id_producto, id_cafeteria, id_categoria, nombre, descripcion, precio, imagen_url, disponible)
   VALUES (p_id_producto, p_id_cafeteria, p_id_categoria, btrim(p_nombre), NULLIF(btrim(p_descripcion), ''),
           p_precio, p_imagen_url, COALESCE(p_disponible, true));
-
-  SELECT to_jsonb(v)
-    INTO p_producto
-    FROM (SELECT p.id_producto, p.id_cafeteria, p.id_categoria, cat.nombre AS categoria, p.nombre, p.descripcion,
-                 p.precio, p.imagen_url, p.disponible, p.creado_en, p.actualizado_en
-            FROM producto p
-            LEFT JOIN categoria cat ON cat.id_categoria = p.id_categoria
-           WHERE p.id_producto = p_id_producto) v;
 EXCEPTION WHEN unique_violation THEN
   RAISE EXCEPTION 'Ya existe un producto con el nombre "%" en esta cafetería', btrim(p_nombre) USING ERRCODE = 'unique_violation';
 END $$;

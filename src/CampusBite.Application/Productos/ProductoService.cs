@@ -1,10 +1,11 @@
 using CampusBite.Application.Common.Security;
 using CampusBite.Application.Productos.Dtos;
 using CampusBite.Domain.Common.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace CampusBite.Application.Productos;
 
-// JY-Sprint4 27/10/2026: TEC-09/TEC-10. Reglas de productos. Los permisos finos (¿es encargado de ESTA cafetería?)
+// JY-Sprint4 27/10/2026: TEC-09 (alta) y TEC-10 (imagen). Reglas de productos. Los permisos finos (¿es encargado de ESTA cafetería?)
 // los revisa la BD; aquí se limpia la entrada y se maneja la imagen.
 // Toda imagen (al crear o al cambiarla) sigue el mismo camino: validar -> subir -> guardar en la BD. Si la BD
 // rechaza (permiso, nombre repetido, categoría ajena), se borra la imagen recién subida para no dejar archivos
@@ -15,12 +16,21 @@ public class ProductoService : IProductoService
     private readonly IProductoRepository _productos;
     private readonly IBlobService _blobs;
     private readonly IUsuarioActual _usuario;
+    private readonly ILogger<ProductoService> _logger;
 
-    public ProductoService(IProductoRepository productos, IBlobService blobs, IUsuarioActual usuario)
+    public ProductoService(
+        IProductoRepository productos, IBlobService blobs, IUsuarioActual usuario, ILogger<ProductoService> logger)
     {
         _productos = productos;
         _blobs = blobs;
         _usuario = usuario;
+        _logger = logger;
+    }
+
+    public async Task<ProductoDto> ObtenerAsync(Guid idCafeteria, Guid idProducto, CancellationToken cancellationToken = default)
+    {
+        return await _productos.ObtenerAsync(idCafeteria, idProducto, _usuario.Id, cancellationToken)
+               ?? throw new NotFoundException("El producto no existe.");
     }
 
     public async Task<ProductoDto> CrearAsync(
@@ -32,12 +42,16 @@ public class ProductoService : IProductoService
 
         if (imagen is null)
         {
-            return await _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, null, cancellationToken);
+            await _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, null, cancellationToken);
+        }
+        else
+        {
+            var url = await SubirAsync(idProducto, imagen, cancellationToken);
+            await GuardarOBorrarAsync(url,
+                () => _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, url, cancellationToken));
         }
 
-        var url = await SubirAsync(idProducto, imagen, cancellationToken);
-        return await GuardarOBorrarAsync(url,
-            () => _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, url, cancellationToken));
+        return await ObtenerAsync(idCafeteria, idProducto, cancellationToken);
     }
 
     public async Task<ImagenProductoDto> SubirImagenAsync(
@@ -46,12 +60,13 @@ public class ProductoService : IProductoService
         var idActor = _usuario.Id;
         var url = await SubirAsync(idProducto, archivo, cancellationToken);
 
-        var anterior = await GuardarOBorrarAsync(url,
-            () => _productos.ActualizarImagenAsync(idCafeteria, idProducto, idActor, url, cancellationToken));
+        string? anterior = null;
+        await GuardarOBorrarAsync(url,
+            async () => anterior = await _productos.ActualizarImagenAsync(idCafeteria, idProducto, idActor, url, cancellationToken));
 
         if (anterior is not null && anterior != url)
         {
-            await EliminarSinFallarAsync(anterior);
+            await EliminarSinFallarAsync(anterior, "fue reemplazada por una nueva");
         }
 
         return new ImagenProductoDto { ImagenUrl = url };
@@ -70,31 +85,33 @@ public class ProductoService : IProductoService
     }
 
     // Guarda en la BD; si falla, la imagen recién subida ya no la usa nadie y se borra
-    private async Task<T> GuardarOBorrarAsync<T>(string urlNueva, Func<Task<T>> guardar)
+    private async Task GuardarOBorrarAsync(string urlNueva, Func<Task> guardar)
     {
         try
         {
-            return await guardar();
+            await guardar();
         }
         catch
         {
-            await EliminarSinFallarAsync(urlNueva);
+            await EliminarSinFallarAsync(urlNueva, "la BD rechazó el guardado");
             throw;
         }
     }
 
-    // Limpieza de un blob que ya no se usa. Si Azure no responde, el blob queda huérfano (no afecta al usuario
-    // y la implementación lo deja en el log); no tiene caso fallar una operación que ya quedó guardada.
+    // Limpieza de un blob que ya no se usa. Si Azure no responde, el blob queda huérfano (no afecta al usuario);
+    // no tiene caso fallar una operación que ya quedó guardada, pero se deja un warning con la URL y el motivo
+    // para poder encontrar y borrar los huérfanos si llegan a costar.
     // Sin CancellationToken: si el cliente se desconectó, la limpieza igual debe terminar.
-    private async Task EliminarSinFallarAsync(string url)
+    private async Task EliminarSinFallarAsync(string url, string motivo)
     {
         try
         {
             await _blobs.EliminarImagenAsync(url, CancellationToken.None);
         }
-        catch (ServiceUnavailableException)
+        catch (ServiceUnavailableException ex)
         {
-            // Ya registrado por la implementación
+            _logger.LogWarning(ex,
+                "Imagen huérfana en Azure Blob Storage: no se pudo borrar {UrlImagen} ({Motivo})", url, motivo);
         }
     }
 
@@ -108,8 +125,15 @@ public class ProductoService : IProductoService
     public Task ToggleDisponibleAsync(Guid idProducto, bool disponible, CancellationToken cancellationToken = default) =>
         _productos.ToggleDisponibleAsync(idProducto, disponible, _usuario.Id, cancellationToken);
 
-    public Task EliminarAsync(Guid idProducto, CancellationToken cancellationToken = default) =>
-        _productos.EliminarAsync(idProducto, _usuario.Id, cancellationToken);
+    // JY-Sprint4 28/10/2026: TEC-10. Si tenía imagen, se borra de Azure después de borrar el producto
+    public async Task EliminarAsync(Guid idProducto, CancellationToken cancellationToken = default)
+    {
+        var imagen = await _productos.EliminarAsync(idProducto, _usuario.Id, cancellationToken);
+        if (imagen is not null)
+        {
+            await EliminarSinFallarAsync(imagen, "se eliminó el producto");
+        }
+    }
 
     public Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(Guid idCafeteria, CancellationToken cancellationToken = default) =>
         _productos.ListarCategoriasAsync(idCafeteria, cancellationToken);

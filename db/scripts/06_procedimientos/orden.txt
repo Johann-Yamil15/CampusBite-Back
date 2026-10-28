@@ -51,3 +51,5 @@
 029_sp_eliminar_producto.sql
 030_sp_crear_categoria.sql
 031_sp_eliminar_categoria.sql
+# TEC-09 (Sprint 4): un producto por id (JY)
+032_sp_obtener_producto.sql

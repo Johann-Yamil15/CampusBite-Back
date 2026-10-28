@@ -10,8 +10,14 @@ namespace CampusBite.Application.Productos;
 // (nombre repetido) y BusinessRuleException (datos inválidos).
 public interface IProductoRepository
 {
-    // idProducto lo genera el servicio: la imagen se sube antes del alta y su nombre lleva ese id
-    Task<ProductoDto> CrearAsync(
+    // null si no existe, es de otra cafetería o el actor no puede verlo (no disponible o cafetería inactiva y no la
+    // administra)
+    Task<ProductoDto?> ObtenerAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default);
+
+    // idProducto lo genera el servicio: la imagen se sube antes del alta y su nombre lleva ese id.
+    // Solo guarda (como los demás sp_crear_*); el producto se lee después con ObtenerAsync.
+    Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default);
 
@@ -26,7 +32,8 @@ public interface IProductoRepository
 
     Task ToggleDisponibleAsync(Guid idProducto, bool disponible, Guid idActor, CancellationToken cancellationToken = default);
 
-    Task EliminarAsync(Guid idProducto, Guid idActor, CancellationToken cancellationToken = default);
+    // JY-Sprint4 28/10/2026: TEC-10. Devuelve la URL de la imagen que tenía (null si no tenía) para borrar el blob
+    Task<string?> EliminarAsync(Guid idProducto, Guid idActor, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(Guid idCafeteria, CancellationToken cancellationToken = default);
 

@@ -1,10 +1,10 @@
 -- =====================================================================
 -- CampusBite · Script consolidado de base de datos
 -- Versión : V1.0.0.008
--- Fecha   : 2026-10-27 18:14:47 -0600
+-- Fecha   : 2026-10-28 13:11:41 -0600
 -- Autor   : Joseph Yañez
--- Huella  : 02d95dd94e0d
--- Incluye : 67 scripts (ver orden.txt de cada módulo)
+-- Huella  : e0bda4f46051
+-- Incluye : 75 scripts (ver orden.txt de cada módulo)
 --   - scripts/01_base/001_extensiones.sql
 --   - scripts/01_base/002_tipos.sql
 --   - scripts/01_base/003_rol_app_backend.sql
@@ -67,6 +67,14 @@
 --   - scripts/06_procedimientos/022_sp_actualizar_imagen_producto.sql
 --   - scripts/06_procedimientos/023_sp_validar_datos_producto.sql
 --   - scripts/06_procedimientos/024_sp_crear_producto.sql
+--   - scripts/06_procedimientos/025_sp_listar_productos_cafeteria.sql
+--   - scripts/06_procedimientos/026_sp_listar_categorias.sql
+--   - scripts/06_procedimientos/027_sp_actualizar_producto.sql
+--   - scripts/06_procedimientos/028_sp_toggle_disponible_producto.sql
+--   - scripts/06_procedimientos/029_sp_eliminar_producto.sql
+--   - scripts/06_procedimientos/030_sp_crear_categoria.sql
+--   - scripts/06_procedimientos/031_sp_eliminar_categoria.sql
+--   - scripts/06_procedimientos/032_sp_obtener_producto.sql
 --   - scripts/07_seguridad/001_privilegios.sql
 --   - scripts/07_seguridad/002_limites_rol_api.sql
 --   - scripts/07_seguridad/003_rls.sql
@@ -1800,10 +1808,13 @@ END $$;
 -- ---------------------------------------------------------------------
 -- JY-Sprint4 27/10/2026: TEC-09. Alta de un producto en el menú de una cafetería. Su encargado o admin_sistema.
 --   CALL sp_crear_producto(<id_producto>, <id_cafeteria>, <id_actor>, <id_categoria o NULL>, 'Chilaquiles verdes',
---                          'Con pollo y crema', 55.00, true, 'https://.../productos/<id_producto>_<fecha>.webp', NULL);
+--                          'Con pollo y crema', 55.00, true, 'https://.../productos/<id_producto>_<fecha>.webp');
 -- p_id_producto lo genera la API: la imagen se sube a Azure antes del alta y su nombre lleva ese id.
 -- p_imagen_url puede ser NULL (producto sin foto). Nombre repetido en la cafetería (sin distinguir mayúsculas) -> 23505.
--- p_producto: el producto creado como JSON (con el nombre de su categoría).
+-- Solo guarda, igual que los demás sp_crear_*: la API ya tiene el id y lee el producto con sp_obtener_producto.
+-- La primera versión devolvía el producto como JSONB (OUT p_producto); se quita esa firma.
+DROP PROCEDURE IF EXISTS sp_crear_producto(UUID, UUID, UUID, UUID, VARCHAR, VARCHAR, NUMERIC, BOOLEAN, VARCHAR, JSONB);
+
 CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_id_producto  UUID,
   IN  p_id_cafeteria UUID,
@@ -1813,8 +1824,7 @@ CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_descripcion  VARCHAR,
   IN  p_precio       NUMERIC,
   IN  p_disponible   BOOLEAN,
-  IN  p_imagen_url   VARCHAR,
-  OUT p_producto     JSONB
+  IN  p_imagen_url   VARCHAR
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
@@ -1834,16 +1844,283 @@ BEGIN
   INSERT INTO producto (id_producto, id_cafeteria, id_categoria, nombre, descripcion, precio, imagen_url, disponible)
   VALUES (p_id_producto, p_id_cafeteria, p_id_categoria, btrim(p_nombre), NULLIF(btrim(p_descripcion), ''),
           p_precio, p_imagen_url, COALESCE(p_disponible, true));
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya existe un producto con el nombre "%" en esta cafetería', btrim(p_nombre) USING ERRCODE = 'unique_violation';
+END $$;
 
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/025_sp_listar_productos_cafeteria.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Lista TODOS los productos de una cafetería (disponibles e inactivos) para el
+-- panel de administración del encargado. La vista vw_menu_cafeteria ya existe pero solo devuelve productos
+-- disponibles de cafeterías activas; se necesita un SP separado para el panel admin.
+--   CALL sp_listar_productos_cafeteria(<id_cafeteria>, <id_actor>, NULL);
+-- Solo su encargado o admin_sistema. Devuelve [] si la cafetería no tiene productos.
+CREATE OR REPLACE PROCEDURE sp_listar_productos_cafeteria(
+  IN  p_id_cafeteria UUID,
+  IN  p_id_actor     UUID,
+  OUT p_productos    JSONB
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  CALL sp_exigir_gestor_cafeteria(p_id_cafeteria, p_id_actor, 'listar productos de esta cafetería');
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'id_producto',    p.id_producto,
+             'id_cafeteria',   p.id_cafeteria,
+             'id_categoria',   p.id_categoria,
+             'categoria',      cat.nombre,
+             'nombre',         p.nombre,
+             'descripcion',    p.descripcion,
+             'precio',         p.precio,
+             'imagen_url',     p.imagen_url,
+             'disponible',     p.disponible,
+             'creado_en',      p.creado_en,
+             'actualizado_en', p.actualizado_en
+           ) ORDER BY cat.nombre NULLS LAST, p.nombre
+         ), '[]'::jsonb)
+    INTO p_productos
+    FROM producto p
+    LEFT JOIN categoria cat ON cat.id_categoria = p.id_categoria
+   WHERE p.id_cafeteria = p_id_cafeteria;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/026_sp_listar_categorias.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Devuelve las categorías de una cafetería. Cualquier usuario autenticado puede
+-- usarlo (para poblar el selector de categoría al crear una orden o al crear un producto).
+--   CALL sp_listar_categorias(<id_cafeteria>, NULL);
+-- Devuelve [] si la cafetería no tiene categorías.
+CREATE OR REPLACE PROCEDURE sp_listar_categorias(
+  IN  p_id_cafeteria UUID,
+  OUT p_categorias   JSONB
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object('id_categoria', c.id_categoria, 'nombre', c.nombre)
+           ORDER BY c.nombre
+         ), '[]'::jsonb)
+    INTO p_categorias
+    FROM categoria c
+   WHERE c.id_cafeteria = p_id_cafeteria;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/027_sp_actualizar_producto.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Actualiza un producto existente. Su encargado o admin_sistema.
+--   CALL sp_actualizar_producto(<id_producto>, <id_actor>, <id_categoria o NULL>,
+--                               'Nuevo nombre', 'Nueva descripción', 55.00, 'https://...', true);
+-- Nombre repetido en la cafetería -> 23505. Producto inexistente -> P0002. Permiso -> 42501.
+CREATE OR REPLACE PROCEDURE sp_actualizar_producto(
+  IN p_id_producto  UUID,
+  IN p_id_actor     UUID,
+  IN p_id_categoria UUID,
+  IN p_nombre       VARCHAR,
+  IN p_descripcion  VARCHAR,
+  IN p_precio       NUMERIC,
+  IN p_disponible   BOOLEAN
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_id_cafeteria UUID;
+BEGIN
+  SELECT p.id_cafeteria INTO v_id_cafeteria
+    FROM producto p WHERE p.id_producto = p_id_producto FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'El producto no existe' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  CALL sp_exigir_gestor_cafeteria(v_id_cafeteria, p_id_actor, 'editar este producto');
+  CALL sp_validar_datos_producto(v_id_cafeteria, p_id_categoria, p_nombre, p_descripcion, p_precio, NULL);
+
+  PERFORM set_config('app.id_actor', p_id_actor::text, true);
+
+  UPDATE producto
+     SET id_categoria = p_id_categoria,
+         nombre       = btrim(p_nombre),
+         descripcion  = NULLIF(btrim(p_descripcion), ''),
+         precio       = p_precio,
+         disponible   = COALESCE(p_disponible, disponible)
+   WHERE id_producto = p_id_producto;
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya existe un producto con el nombre "%" en esta cafetería', btrim(p_nombre)
+    USING ERRCODE = 'unique_violation';
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/028_sp_toggle_disponible_producto.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Cambia solo la disponibilidad de un producto (toggle rápido del panel admin).
+-- Su encargado o admin_sistema.
+--   CALL sp_toggle_disponible_producto(<id_producto>, false, <id_actor>);
+CREATE OR REPLACE PROCEDURE sp_toggle_disponible_producto(
+  IN p_id_producto UUID,
+  IN p_disponible  BOOLEAN,
+  IN p_id_actor    UUID
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_id_cafeteria UUID;
+BEGIN
+  SELECT p.id_cafeteria INTO v_id_cafeteria
+    FROM producto p WHERE p.id_producto = p_id_producto FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'El producto no existe' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  CALL sp_exigir_gestor_cafeteria(v_id_cafeteria, p_id_actor, 'cambiar disponibilidad de este producto');
+
+  PERFORM set_config('app.id_actor', p_id_actor::text, true);
+
+  UPDATE producto SET disponible = p_disponible WHERE id_producto = p_id_producto;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/029_sp_eliminar_producto.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Elimina un producto físicamente. Su encargado o admin_sistema.
+-- Si tiene órdenes activas (pendiente/confirmada/en_preparacion/lista) devuelve 55006 (object_in_use):
+-- el encargado debe desactivarlo en su lugar con sp_toggle_disponible_producto.
+--   CALL sp_eliminar_producto(<id_producto>, <id_actor>, NULL);
+-- JY-Sprint4 28/10/2026: TEC-10. p_imagen_url devuelve la imagen que tenía (o NULL) para que la API borre el blob
+-- de Azure y no quede huérfano. Si el producto aparece en órdenes ya terminadas (entregada/cancelada) también es
+-- 55006: detalle_orden lo referencia sin ON DELETE y borrarlo rompería el historial (antes salía 23503 -> 500).
+DROP PROCEDURE IF EXISTS sp_eliminar_producto(UUID, UUID);
+
+CREATE OR REPLACE PROCEDURE sp_eliminar_producto(
+  IN  p_id_producto UUID,
+  IN  p_id_actor    UUID,
+  OUT p_imagen_url  VARCHAR
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_id_cafeteria UUID;
+  v_en_ordenes   INT;
+BEGIN
+  SELECT p.id_cafeteria, p.imagen_url INTO v_id_cafeteria, p_imagen_url
+    FROM producto p WHERE p.id_producto = p_id_producto FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'El producto no existe' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  CALL sp_exigir_gestor_cafeteria(v_id_cafeteria, p_id_actor, 'eliminar este producto');
+
+  SELECT count(*) INTO v_en_ordenes
+    FROM detalle_orden d
+    JOIN orden o ON o.id_orden = d.id_orden
+   WHERE d.id_producto = p_id_producto
+     AND o.estado IN ('pendiente', 'confirmada', 'en_preparacion', 'lista');
+
+  IF v_en_ordenes > 0 THEN
+    RAISE EXCEPTION 'El producto tiene % orden(es) activa(s); desactívalo en su lugar', v_en_ordenes
+      USING ERRCODE = 'object_in_use';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM detalle_orden d WHERE d.id_producto = p_id_producto) THEN
+    RAISE EXCEPTION 'El producto aparece en el historial de órdenes; desactívalo en su lugar'
+      USING ERRCODE = 'object_in_use';
+  END IF;
+
+  PERFORM set_config('app.id_actor', p_id_actor::text, true);
+
+  DELETE FROM producto WHERE id_producto = p_id_producto;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/030_sp_crear_categoria.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Crea una categoría en la cafetería. Su encargado o admin_sistema.
+--   CALL sp_crear_categoria(<id_cafeteria>, <id_actor>, 'Bebidas', NULL);
+-- Nombre repetido en la cafetería -> 23505.
+CREATE OR REPLACE PROCEDURE sp_crear_categoria(
+  IN  p_id_cafeteria UUID,
+  IN  p_id_actor     UUID,
+  IN  p_nombre       VARCHAR,
+  OUT p_id_categoria UUID
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  CALL sp_exigir_gestor_cafeteria(p_id_cafeteria, p_id_actor, 'crear categorías en esta cafetería');
+
+  PERFORM set_config('app.id_actor', p_id_actor::text, true);
+
+  INSERT INTO categoria (id_cafeteria, nombre)
+  VALUES (p_id_cafeteria, btrim(p_nombre))
+  RETURNING id_categoria INTO p_id_categoria;
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya existe una categoría con ese nombre en esta cafetería'
+    USING ERRCODE = 'unique_violation';
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/031_sp_eliminar_categoria.sql
+-- ---------------------------------------------------------------------
+-- JJ-Sprint4 27/10/2026: TEC-09. Elimina una categoría. Su encargado o admin_sistema.
+-- Los productos de esa categoría quedan con id_categoria = NULL (ON DELETE SET NULL en la tabla producto).
+--   CALL sp_eliminar_categoria(<id_categoria>, <id_actor>);
+CREATE OR REPLACE PROCEDURE sp_eliminar_categoria(
+  IN p_id_categoria UUID,
+  IN p_id_actor     UUID
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+  v_id_cafeteria UUID;
+BEGIN
+  SELECT c.id_cafeteria INTO v_id_cafeteria
+    FROM categoria c WHERE c.id_categoria = p_id_categoria FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'La categoría no existe' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  CALL sp_exigir_gestor_cafeteria(v_id_cafeteria, p_id_actor, 'eliminar esta categoría');
+
+  PERFORM set_config('app.id_actor', p_id_actor::text, true);
+
+  DELETE FROM categoria WHERE id_categoria = p_id_categoria;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/032_sp_obtener_producto.sql
+-- ---------------------------------------------------------------------
+-- JY-Sprint4 27/10/2026: TEC-09. Un producto de una cafetería por id.
+--   CALL sp_obtener_producto(<id_cafeteria>, <id_producto>, <id_actor>, NULL);
+-- p_producto: el producto como JSON (con el nombre de su categoría), o NULL si no existe o no es de esa cafetería.
+-- Un producto no disponible, o de una cafetería inactiva, solo lo ven su encargado y admin_sistema; para los demás
+-- también es NULL (igual que sp_obtener_cafeteria: no se revela que existe). Lo usa también el alta (sp_crear_producto
+-- solo guarda) para responder con el producto creado.
+CREATE OR REPLACE PROCEDURE sp_obtener_producto(
+  IN  p_id_cafeteria UUID,
+  IN  p_id_producto  UUID,
+  IN  p_id_actor     UUID,
+  OUT p_producto     JSONB
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
   SELECT to_jsonb(v)
     INTO p_producto
     FROM (SELECT p.id_producto, p.id_cafeteria, p.id_categoria, cat.nombre AS categoria, p.nombre, p.descripcion,
                  p.precio, p.imagen_url, p.disponible, p.creado_en, p.actualizado_en
             FROM producto p
+            JOIN cafeteria c        ON c.id_cafeteria = p.id_cafeteria
             LEFT JOIN categoria cat ON cat.id_categoria = p.id_categoria
-           WHERE p.id_producto = p_id_producto) v;
-EXCEPTION WHEN unique_violation THEN
-  RAISE EXCEPTION 'Ya existe un producto con el nombre "%" en esta cafetería', btrim(p_nombre) USING ERRCODE = 'unique_violation';
+           WHERE p.id_producto = p_id_producto
+             AND p.id_cafeteria = p_id_cafeteria
+             AND ((c.activa AND p.disponible) OR EXISTS (
+                   SELECT 1 FROM usuario u
+                    WHERE u.id_usuario = p_id_actor AND u.activo
+                      AND (u.id_rol = 3 OR (u.id_rol = 2 AND u.id_cafeteria = c.id_cafeteria))))) v;
 END $$;
 
 
@@ -1884,7 +2161,15 @@ GRANT EXECUTE ON PROCEDURE
   sp_restablecer_password,
   sp_autorregistrar_cafeteria,
   sp_actualizar_imagen_producto,
-  sp_crear_producto
+  sp_crear_producto,
+  sp_listar_productos_cafeteria,
+  sp_listar_categorias,
+  sp_actualizar_producto,
+  sp_toggle_disponible_producto,
+  sp_eliminar_producto,
+  sp_crear_categoria,
+  sp_eliminar_categoria,
+  sp_obtener_producto
 TO app_backend;
 -- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria,
 -- sp_validar_datos_producto.
@@ -1985,7 +2270,7 @@ ON CONFLICT (id_producto) DO NOTHING;
 
 
 -- Marca de versión visible con: SELECT obj_description('public'::regnamespace);
-COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.008 (2026-10-27 18:14:47 -0600)';
+COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.008 (2026-10-28 13:11:41 -0600)';
 
 COMMIT;
 

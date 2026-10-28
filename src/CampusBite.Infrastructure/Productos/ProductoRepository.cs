@@ -18,20 +18,26 @@ public class ProductoRepository : IProductoRepository
         _context = context;
     }
 
-    public async Task<ProductoDto> CrearAsync(
+    public Task<ProductoDto?> ObtenerAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_obtener_producto(@cafeteria, @producto, @actor, NULL)",
+            [Id("cafeteria", idCafeteria), Id("producto", idProducto), Id("actor", idActor)],
+            fila => fila.LeerJson<ProductoDto>(0),
+            cancellationToken);
+
+    public Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default) =>
-        await _context.EjecutarAsync(
-            "CALL sp_crear_producto(@id, @cafeteria, @actor, @categoria, @nombre, @descripcion, @precio, @disponible, @url, NULL)",
+        _context.EjecutarAsync(
+            "CALL sp_crear_producto(@id, @cafeteria, @actor, @categoria, @nombre, @descripcion, @precio, @disponible, @url)",
             [
                 Id("id", idProducto), Id("cafeteria", idCafeteria), Id("actor", idActor),
                 IdOpcional("categoria", datos.IdCategoria), Texto("nombre", datos.Nombre),
                 Texto("descripcion", datos.Descripcion), Numero("precio", datos.Precio),
                 Logico("disponible", datos.Disponible), Texto("url", imagenUrl)
             ],
-            fila => fila.LeerJson<ProductoDto>(0),
-            cancellationToken)
-        ?? throw new InvalidOperationException("sp_crear_producto no devolvió el producto creado.");
+            cancellationToken);
 
     public Task<string?> ActualizarImagenAsync(
         Guid idCafeteria, Guid idProducto, Guid idActor, string imagenUrl, CancellationToken cancellationToken = default) =>
@@ -72,11 +78,12 @@ public class ProductoRepository : IProductoRepository
             [Id("producto", idProducto), Logico("disponible", disponible), Id("actor", idActor)],
             cancellationToken);
 
-    public Task EliminarAsync(
+    public Task<string?> EliminarAsync(
         Guid idProducto, Guid idActor, CancellationToken cancellationToken = default) =>
-        _context.EjecutarAsync(
-            "CALL sp_eliminar_producto(@producto, @actor)",
+        _context.EjecutarAsync<string?>(
+            "CALL sp_eliminar_producto(@producto, @actor, NULL)",
             [Id("producto", idProducto), Id("actor", idActor)],
+            fila => fila.IsDBNull(0) ? null : fila.GetString(0),
             cancellationToken);
 
     public async Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(
