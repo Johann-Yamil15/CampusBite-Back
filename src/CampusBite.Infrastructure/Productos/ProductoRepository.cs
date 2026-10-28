@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CampusBite.Application.Productos;
 using CampusBite.Application.Productos.Dtos;
 using CampusBite.Infrastructure.Persistence;
@@ -38,5 +39,69 @@ public class ProductoRepository : IProductoRepository
             "CALL sp_actualizar_imagen_producto(@cafeteria, @producto, @actor, @url, NULL)",
             [Id("cafeteria", idCafeteria), Id("producto", idProducto), Id("actor", idActor), Texto("url", imagenUrl)],
             fila => fila.IsDBNull(0) ? null : fila.GetString(0),
+            cancellationToken);
+
+    // JJ-Sprint4 27/10/2026: TEC-09. CRUD completo de productos y categorías
+
+    public async Task<IReadOnlyList<ProductoDto>> ListarAsync(
+        Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        var json = await _context.EjecutarAsync(
+            "CALL sp_listar_productos_cafeteria(@cafeteria, @actor, NULL)",
+            [Id("cafeteria", idCafeteria), Id("actor", idActor)],
+            fila => fila.GetString(0),
+            cancellationToken);
+        return JsonSerializer.Deserialize<List<ProductoDto>>(json, Json) ?? [];
+    }
+
+    public Task ActualizarAsync(
+        Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_actualizar_producto(@producto, @actor, @categoria, @nombre, @descripcion, @precio, @disponible)",
+            [
+                Id("producto", idProducto), Id("actor", idActor), IdOpcional("categoria", datos.IdCategoria),
+                Texto("nombre", datos.Nombre), Texto("descripcion", datos.Descripcion),
+                Numero("precio", datos.Precio), Logico("disponible", datos.Disponible)
+            ],
+            cancellationToken);
+
+    public Task ToggleDisponibleAsync(
+        Guid idProducto, bool disponible, Guid idActor, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_toggle_disponible_producto(@producto, @disponible, @actor)",
+            [Id("producto", idProducto), Logico("disponible", disponible), Id("actor", idActor)],
+            cancellationToken);
+
+    public Task EliminarAsync(
+        Guid idProducto, Guid idActor, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_eliminar_producto(@producto, @actor)",
+            [Id("producto", idProducto), Id("actor", idActor)],
+            cancellationToken);
+
+    public async Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(
+        Guid idCafeteria, CancellationToken cancellationToken = default)
+    {
+        var json = await _context.EjecutarAsync(
+            "CALL sp_listar_categorias(@cafeteria, NULL)",
+            [Id("cafeteria", idCafeteria)],
+            fila => fila.GetString(0),
+            cancellationToken);
+        return JsonSerializer.Deserialize<List<CategoriaDto>>(json, Json) ?? [];
+    }
+
+    public Task<Guid> CrearCategoriaAsync(
+        Guid idCafeteria, Guid idActor, string nombre, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_crear_categoria(@cafeteria, @actor, @nombre, NULL)",
+            [Id("cafeteria", idCafeteria), Id("actor", idActor), Texto("nombre", nombre)],
+            fila => fila.GetGuid(0),
+            cancellationToken);
+
+    public Task EliminarCategoriaAsync(
+        Guid idCategoria, Guid idActor, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_eliminar_categoria(@categoria, @actor)",
+            [Id("categoria", idCategoria), Id("actor", idActor)],
             cancellationToken);
 }
