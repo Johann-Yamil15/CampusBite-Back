@@ -52,8 +52,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 21, format('Se esperaban 21 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 21 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 24, format('Se esperaban 24 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 24 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
@@ -512,5 +512,112 @@ BEGIN
   RAISE NOTICE 'OK 22: autorregistro de negocio atómico, encargado enlazado, 23505 por correo o nombre y bitácora';
 END $$;
 
+-- 23. Imagen de producto (TEC-10) --------------------------------------------------
+-- JY-Sprint4 27/10/2026: guarda la URL y devuelve la anterior (la API borra ese blob); solo su encargado o
+-- admin_sistema; un producto de otra cafetería es "no existe"; URL inválida es check_violation.
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_admin   UUID := '00000000-0000-0000-0000-0000000000a2';     -- encargado de c1
+  c_sistema UUID := '00000000-0000-0000-0000-0000000000a3';
+  c_cafe    UUID := '00000000-0000-0000-0000-0000000000c1';
+  c_p1      UUID := '00000000-0000-0000-0000-0000000000e1';
+  c_url1    VARCHAR := 'https://campusbite.blob.core.windows.net/productos/e1_20261027T120000000Z.webp';
+  c_url2    VARCHAR := 'https://campusbite.blob.core.windows.net/productos/e1_20261027T120500000Z.png';
+  v_previa  VARCHAR;
+  v_anterior VARCHAR;
+  v_ok      BOOLEAN;
+BEGIN
+  SELECT imagen_url INTO v_previa FROM producto WHERE id_producto = c_p1;
+  SET LOCAL ROLE app_backend;
+
+  CALL sp_actualizar_imagen_producto(c_cafe, c_p1, c_admin, c_url1, v_anterior);
+  ASSERT v_anterior IS NOT DISTINCT FROM v_previa, 'Debe devolver la URL que tenía antes';
+  CALL sp_actualizar_imagen_producto(c_cafe, c_p1, c_sistema, c_url2, v_anterior);
+  ASSERT v_anterior = c_url1, 'La segunda subida debe devolver la URL de la primera para borrar ese blob';
+
+  v_ok := false;
+  BEGIN CALL sp_actualizar_imagen_producto(c_cafe, c_p1, c_alumno, c_url1, v_anterior);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Un alumno no debe cambiar imágenes';
+  v_ok := false;
+  BEGIN CALL sp_actualizar_imagen_producto(gen_random_uuid(), c_p1, c_sistema, c_url1, v_anterior);
+  EXCEPTION WHEN no_data_found THEN v_ok := true; END;
+  ASSERT v_ok, 'Un producto que no es de esa cafetería debe ser "no existe"';
+  v_ok := false;
+  BEGIN CALL sp_actualizar_imagen_producto(c_cafe, c_p1, c_admin, 'javascript:alert(1)', v_anterior);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una URL que no es http(s) debe rechazarse';
+  RESET ROLE;
+
+  ASSERT (SELECT imagen_url FROM producto WHERE id_producto = c_p1) = c_url2, 'Debe quedar la última URL guardada';
+  ASSERT EXISTS (SELECT 1 FROM bitacora WHERE tabla = 'producto' AND id_registro = c_p1::text
+                   AND operacion = 'U' AND cambiado_por = c_sistema), 'La bitácora debe registrar quién cambió la imagen';
+
+  RAISE NOTICE 'OK 23: imagen de producto guardada, URL anterior devuelta, permisos, cafetería y URL validados';
+END $$;
+
+-- 24. Alta de producto (TEC-09) -----------------------------------------------------
+-- JY-Sprint4 27/10/2026: con o sin imagen; nombre recortado y único por cafetería sin distinguir mayúsculas;
+-- solo su encargado o admin_sistema; categoría de otra cafetería, precio o URL inválidos -> check_violation.
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_admin   UUID := '00000000-0000-0000-0000-0000000000a2';     -- encargado de c1
+  c_sistema UUID := '00000000-0000-0000-0000-0000000000a3';
+  c_cafe    UUID := '00000000-0000-0000-0000-0000000000c1';
+  c_cat     UUID := '00000000-0000-0000-0000-0000000000d2';     -- Bebidas (de c1)
+  v_id      UUID := gen_random_uuid();
+  v_url     VARCHAR;
+  v_json    JSONB;
+  v_ok      BOOLEAN;
+BEGIN
+  v_url := format('https://campusbite.blob.core.windows.net/productos/%s_20261027T120000000Z.webp', v_id);
+  SET LOCAL ROLE app_backend;
+
+  CALL sp_crear_producto(v_id, c_cafe, c_admin, c_cat, '  Agua de jamaica ', '  ', 18.50, NULL, v_url, v_json);
+  ASSERT (v_json->>'id_producto')::uuid = v_id, 'Debe usar el id que manda la API';
+  ASSERT v_json->>'nombre' = 'Agua de jamaica', 'El nombre se guarda recortado';
+  ASSERT v_json->>'descripcion' IS NULL, 'Una descripción en blanco se guarda como NULL';
+  ASSERT v_json->>'categoria' = 'Bebidas' AND (v_json->>'precio')::numeric = 18.50, 'Debe devolver categoría y precio';
+  ASSERT (v_json->>'disponible')::boolean AND v_json->>'imagen_url' = v_url, 'Disponible por defecto y con su imagen';
+
+  CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_sistema, NULL, 'Sin foto', NULL, 10, false, NULL, v_json);
+  ASSERT v_json->>'imagen_url' IS NULL AND NOT (v_json->>'disponible')::boolean, 'Sin imagen y no disponible';
+
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'AGUA DE JAMAICA', NULL, 20, true, NULL, v_json);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Un nombre repetido (sin distinguir mayúsculas) debió rechazarse con 23505';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_alumno, NULL, 'Del alumno', NULL, 20, true, NULL, v_json);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
+  ASSERT v_ok, 'Un alumno no debe crear productos';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), gen_random_uuid(), c_sistema, NULL, 'Huérfano', NULL, 20, true, NULL, v_json);
+  EXCEPTION WHEN no_data_found THEN v_ok := true; END;
+  ASSERT v_ok, 'Una cafetería que no existe debe ser "no existe"';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, gen_random_uuid(), 'Otra cat', NULL, 20, true, NULL, v_json);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una categoría de otra cafetería debió rechazarse';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'Caro', NULL, 10.555, true, NULL, v_json);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Un precio con más de 2 decimales debió rechazarse';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL mala', NULL, 10, true, 'ftp://x/y.png', v_json);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una URL que no es http(s) debió rechazarse';
+  RESET ROLE;
+
+  ASSERT EXISTS (SELECT 1 FROM bitacora WHERE tabla = 'producto' AND id_registro = v_id::text
+                   AND operacion = 'I' AND cambiado_por = c_admin), 'La bitácora debe registrar al encargado como autor del alta';
+  ASSERT NOT EXISTS (SELECT 1 FROM producto WHERE nombre IN ('Del alumno', 'Huérfano', 'Otra cat', 'Caro', 'URL mala')),
+         'Ningún alta rechazada debe dejar producto';
+
+  RAISE NOTICE 'OK 24: alta de producto con o sin imagen, nombre único por cafetería, permisos y datos validados';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 22 de 22 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 24 de 24 OK (transacción revertida)'

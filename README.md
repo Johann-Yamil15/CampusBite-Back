@@ -106,11 +106,13 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
 | `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
 | `CALL sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | Baja lógica o reactivación. Solo `admin_sistema`. Con órdenes en curso → `55006` |
+| `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url, NULL)` | `p_producto` (JSON) | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
+| `CALL sp_actualizar_imagen_producto(id_cafeteria, id_producto, id_actor, imagen_url, NULL)` | `p_imagen_anterior` | Guarda la URL de la imagen y devuelve la que tenía antes (para borrar ese blob). Su encargado o `admin_sistema`; producto de otra cafetería → `P0002` |
 
 Al cancelar una orden, su pago pasa solo a `reembolsado` (si ya estaba pagado) o `cancelado`.
 Las vistas `vw_*` existen, pero solo las usan los procedimientos: la API no tiene permiso para leerlas.
 
-Lo que no aparece aquí (por ejemplo, el CRUD de cafeterías y productos, el perfil del usuario o las suscripciones push) todavía no tiene procedimiento: hay que agregarlo en un script nuevo.
+Lo que no aparece aquí (por ejemplo, listar, editar o borrar productos, el perfil del usuario o las suscripciones push) todavía no tiene procedimiento: hay que agregarlo en un script nuevo.
 
 ## Agregar un módulo nuevo (ej. Cafeterías)
 `Cafeterias/` (TEC-08) ya está hecho siguiendo estos pasos: úsalo como ejemplo completo de CRUD.
@@ -210,6 +212,61 @@ aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se pued
 - Los métodos de pago se envían y se reciben como texto; un número o un método que no existe da 400.
 - `PUT` reemplaza los métodos de pago por la lista enviada. No cambia `activa`: para eso están `DELETE` y `reactivar`.
 - Desactivar o reactivar dos veces no es error.
+
+## Alta de producto (TEC-09)
+`POST /api/cafeterias/{idCafeteria}/productos` · `multipart/form-data`. Solo su encargado o `AdminSistema`.
+La imagen es **opcional** y sigue exactamente las mismas reglas que el cambio de imagen (sección siguiente):
+JPEG, PNG o WebP, máximo 5 MB, contenido real verificado, mismos tiempos y reintentos.
+
+| Campo | Obligatorio | Regla |
+|---|---|---|
+| `nombre` | Sí | 2 a 100 caracteres; único en la cafetería sin distinguir mayúsculas |
+| `descripcion` | No | Máx. 500; en blanco se guarda vacía (`null`) |
+| `precio` | Sí | Mayor a 0, menor a 1,000,000, máx. 2 decimales. Siempre con punto: `55.50` |
+| `idCategoria` | No | Una categoría de **esa** cafetería |
+| `disponible` | No | `true` / `false` (por defecto `true`) |
+| `archivo` | No | La imagen |
+
+```json
+// 201
+{ "idProducto": "…", "idCafeteria": "…", "idCategoria": null, "categoria": null, "nombre": "Chilaquiles verdes",
+  "descripcion": "Con pollo y crema", "precio": 55.50, "imagenUrl": "https://…/productos/<idProducto>_….webp",
+  "disponible": true, "creadoEn": "…", "actualizadoEn": "…" }
+```
+
+Responde lo mismo que el cambio de imagen (400, 403, 404, 413, 503, 504) y además **409** si ya existe un producto
+con ese nombre. Si la imagen no es válida no se crea el producto; si la BD rechaza el alta, se borra la imagen que
+ya se había subido. Un alta repetida por mala señal no duplica: la segunda responde 409.
+
+## Imagen de producto (TEC-10)
+`POST /api/cafeterias/{idCafeteria}/productos/{idProducto}/imagen` · `multipart/form-data` con el campo `archivo`.
+Solo su encargado (`AdminCafeteria` de **esa** cafetería) o `AdminSistema`. La imagen se guarda en Azure Blob Storage
+(contenedor `productos`, lectura pública) y su URL en `producto.imagen_url`.
+
+```json
+// 200
+{ "imagenUrl": "https://campusbite.blob.core.windows.net/productos/<idProducto>_20261027T120000123Z.webp" }
+```
+
+| Código | Cuándo | Qué hacer en el front |
+|---|---|---|
+| 400 | Falta `archivo`; no es JPEG, PNG o WebP; está vacío; pesa más de 5 MB; o su contenido no es de verdad ese formato | Mostrar el `detail` |
+| 403 / 404 | Rol sin permiso o encargado de otra cafetería / el producto no existe o no es de esa cafetería | Mostrar el `detail` |
+| 413 | El cuerpo ya dice (`Content-Length`) que pesa mucho más de 5 MB: se rechaza sin recibirlo | Pedir una imagen más chica |
+| 503 | Azure no respondió después de reintentar; trae `Retry-After: 5` | Esperar y **repetir la misma petición** |
+| 504 | La subida tardó más de 3 minutos (señal muy débil) | Avisar y repetir cuando mejore la señal |
+
+Pensado para celulares con mala señal:
+- **Reintentar es seguro.** Si el celular pierde la respuesta y repite la subida, queda una sola imagen: cada subida
+  guarda la suya y borra la anterior. Orden interno: subir la nueva → guardar la URL → borrar la vieja; si algo
+  falla a la mitad, el producto sigue con su imagen anterior y no quedan archivos huérfanos.
+- Kestrel ya no corta una subida lenta a los pocos segundos (mínimo 64 bytes/s con 30 s de gracia) y el tiempo total
+  se limita a 3 minutos (`SubidaDeArchivoAttribute`), antes de los 230 s en que corta Azure App Service.
+- Entre la API y Azure: reintentos exponenciales (4, de 1 a 10 s, 30 s por intento) y envío en bloques de 1 MB, así un
+  corte solo repite el bloque que falló. Se ajustan con `AzureBlob__*` (ver `.env.example`).
+- Sin `AzureBlob__ConnectionString` la API arranca igual, pero esta ruta responde 503 (queda el motivo en el log).
+  En local se puede usar [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) con
+  `AzureBlob__ConnectionString=UseDevelopmentStorage=true` (crea antes el contenedor `productos` con acceso público).
 
 ## API de autenticación
 Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato ProblemDetails
@@ -353,7 +410,16 @@ dotnet run --project src/CampusBite.Api --launch-profile https    # https://loca
 
 # 3) Pruebas (también corren en GitHub Actions antes de cada despliegue)
 dotnet test
+
+# 4) Pruebas de mutación (opcional; revisan que las pruebas de verdad detecten errores)
+dotnet tool install -g dotnet-stryker                       # solo la primera vez
+cd tests/CampusBite.Application.Tests && dotnet stryker      # reporte en StrykerOutput/ (ignorado por git)
 ```
+
+Las pruebas de mutación (Stryker) cambian el código a propósito (un `>` por `>=`, quitan una línea...) y revisan
+que alguna prueba falle. Cada proyecto de pruebas trae su `stryker-config.json` con los archivos a mutar y un
+mínimo de 80 %. Al cerrar TEC-09/TEC-10: Application 95 % y Api 98 %. Lo que sobrevive son mutantes equivalentes
+(valores por defecto de DTOs, liberar un `MemoryStream`), que ninguna prueba puede distinguir.
 
 En Visual Studio abre `CampusBite-Back.sln` y marca `CampusBite.Api` como proyecto de inicio.
 

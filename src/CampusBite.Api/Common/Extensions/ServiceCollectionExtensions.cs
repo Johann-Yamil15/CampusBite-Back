@@ -1,10 +1,12 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using CampusBite.Api.Common.Filters;
 using CampusBite.Api.Common.Middleware;
 using CampusBite.Api.Common.Security;
 using CampusBite.Api.Common.Settings;
 using CampusBite.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -143,6 +145,23 @@ public static class ServiceCollectionExtensions
                 }
             });
         });
+
+        return services;
+    }
+
+    // JY-Sprint4 27/10/2026: TEC-10. Tiempo máximo de una subida de archivo ([RequestTimeout] en la acción).
+    // Si la red es tan lenta que no termina, se responde 504 con el formato de siempre en vez de dejar la
+    // conexión colgada; el front puede reintentar. Ver SubidaDeArchivoAttribute.
+    public static IServiceCollection AddSubidaDeArchivos(this IServiceCollection services)
+    {
+        services.AddRequestTimeouts(options =>
+            options.AddPolicy(SubidaDeArchivoAttribute.PoliticaTiempo, new RequestTimeoutPolicy
+            {
+                Timeout = SubidaDeArchivoAttribute.TiempoMaximo,
+                TimeoutStatusCode = StatusCodes.Status504GatewayTimeout,
+                WriteTimeoutResponse = context => ProblemaHttp.EscribirAsync(context, StatusCodes.Status504GatewayTimeout,
+                    "La subida tardó demasiado. Revisa tu conexión e intenta de nuevo.")
+            }));
 
         return services;
     }

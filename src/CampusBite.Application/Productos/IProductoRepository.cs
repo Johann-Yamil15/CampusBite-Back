@@ -1,0 +1,19 @@
+using CampusBite.Application.Productos.Dtos;
+
+namespace CampusBite.Application.Productos;
+
+// JY-Sprint4 27/10/2026: TEC-09/TEC-10. Acceso a productos; Infrastructure lo implementa con los sp_*_producto.
+// idActor siempre es el usuario de la sesión (IUsuarioActual): la BD valida con él los permisos.
+// Errores: NotFoundException (no existe o no es de esa cafetería), ForbiddenException, ConflictException
+// (nombre repetido) y BusinessRuleException (datos inválidos).
+public interface IProductoRepository
+{
+    // idProducto lo genera el servicio: la imagen se sube antes del alta y su nombre lleva ese id
+    Task<ProductoDto> CrearAsync(
+        Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
+        CancellationToken cancellationToken = default);
+
+    // Guarda la URL nueva y devuelve la que tenía antes (null si no tenía), para borrar ese blob
+    Task<string?> ActualizarImagenAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, string imagenUrl, CancellationToken cancellationToken = default);
+}
