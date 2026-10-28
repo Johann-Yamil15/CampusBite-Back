@@ -28,6 +28,59 @@ public class ProductosController : ControllerBase
         _productos = productos;
     }
 
+    // JJ-Sprint4 27/10/2026: TEC-09. Lista todos los productos (disponibles e inactivos) para el panel admin
+    [HttpGet]
+    [Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]
+    [ProducesResponseType<IReadOnlyList<ProductoDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<ProductoDto>>> Listar(Guid idCafeteria, CancellationToken cancellationToken)
+        => Ok(await _productos.ListarAsync(idCafeteria, cancellationToken));
+
+    // JJ-Sprint4 27/10/2026: TEC-09. Actualiza nombre, precio, categoría y disponibilidad. La imagen se gestiona por POST .../imagen
+    [HttpPut("{idProducto:guid}")]
+    [Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Actualizar(
+        Guid idCafeteria, Guid idProducto, [FromBody] GuardarProductoDto dto, CancellationToken cancellationToken)
+    {
+        await _productos.ActualizarAsync(idProducto, dto, cancellationToken);
+        return NoContent();
+    }
+
+    // JJ-Sprint4 27/10/2026: TEC-09. Toggle rápido de disponibilidad desde el panel admin
+    [HttpPatch("{idProducto:guid}/disponible")]
+    [Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ToggleDisponible(
+        Guid idCafeteria, Guid idProducto, [FromBody] bool disponible, CancellationToken cancellationToken)
+    {
+        await _productos.ToggleDisponibleAsync(idProducto, disponible, cancellationToken);
+        return NoContent();
+    }
+
+    // JJ-Sprint4 27/10/2026: TEC-09. Elimina físicamente; 409 si tiene órdenes activas (desactivarlo primero)
+    [HttpDelete("{idProducto:guid}")]
+    [Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Eliminar(Guid idCafeteria, Guid idProducto, CancellationToken cancellationToken)
+    {
+        await _productos.EliminarAsync(idProducto, cancellationToken);
+        return NoContent();
+    }
+
     // Cualquier usuario con sesión ve un producto disponible de una cafetería activa; uno no disponible (o de una
     // cafetería inactiva) solo lo ven su encargado y el admin del sistema. Para los demás es 404
     // Los nombres de ruta son globales: "Obtener" ya es el de cafeterías

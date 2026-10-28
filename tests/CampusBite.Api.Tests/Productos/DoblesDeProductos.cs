@@ -34,44 +34,96 @@ internal sealed class RepositorioFalso : IProductoRepository
     public string? ImagenActual { get; set; }
     public Exception? Error { get; set; }
     public DatosProducto? UltimosDatos { get; private set; }
+    public bool Eliminado { get; private set; }
+    public bool? UltimoToggle { get; private set; }
 
-    // Lo que "hay en la BD", por (cafetería, producto); el alta agrega aquí
-    public Dictionary<(Guid IdCafeteria, Guid IdProducto), ProductoDto> Productos { get; } = [];
+    // Productos y categorías en memoria para que Listar devuelva algo
+    public List<ProductoDto> Productos { get; } = [];
+    public List<CategoriaDto> Categorias { get; } = [];
 
     public Task<ProductoDto?> ObtenerAsync(
         Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default) =>
-        Task.FromResult(Productos.GetValueOrDefault((idCafeteria, idProducto)));
+        Task.FromResult(Productos.FirstOrDefault(p => p.IdCafeteria == idCafeteria && p.IdProducto == idProducto));
 
     public Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default)
     {
-        if (Error is not null)
-        {
-            throw Error;
-        }
+        if (Error is not null) throw Error;
 
         UltimosDatos = datos;
         ImagenActual = imagenUrl;
-        Productos[(idCafeteria, idProducto)] = new ProductoDto
+        Productos.Add(new ProductoDto
         {
             IdProducto = idProducto, IdCafeteria = idCafeteria, IdCategoria = datos.IdCategoria, Nombre = datos.Nombre,
             Descripcion = datos.Descripcion, Precio = datos.Precio, ImagenUrl = imagenUrl, Disponible = datos.Disponible,
             CreadoEn = DateTimeOffset.UtcNow, ActualizadoEn = DateTimeOffset.UtcNow
-        };
+        });
         return Task.CompletedTask;
     }
 
     public Task<string?> ActualizarImagenAsync(
         Guid idCafeteria, Guid idProducto, Guid idActor, string imagenUrl, CancellationToken cancellationToken = default)
     {
-        if (Error is not null)
-        {
-            throw Error;
-        }
-
+        if (Error is not null) throw Error;
         var anterior = ImagenActual;
         ImagenActual = imagenUrl;
         return Task.FromResult(anterior);
+    }
+
+    // JJ-Sprint4 27/10/2026: TEC-09
+    public Task<IReadOnlyList<ProductoDto>> ListarAsync(
+        Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        return Task.FromResult<IReadOnlyList<ProductoDto>>(Productos);
+    }
+
+    public Task ActualizarAsync(
+        Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        UltimosDatos = datos;
+        return Task.CompletedTask;
+    }
+
+    public Task ToggleDisponibleAsync(
+        Guid idProducto, bool disponible, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        UltimoToggle = disponible;
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> EliminarAsync(
+        Guid idProducto, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        Eliminado = true;
+        return Task.FromResult(ImagenActual);
+    }
+
+    public Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(
+        Guid idCafeteria, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        return Task.FromResult<IReadOnlyList<CategoriaDto>>(Categorias);
+    }
+
+    public Task<Guid> CrearCategoriaAsync(
+        Guid idCafeteria, Guid idActor, string nombre, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        var id = Guid.NewGuid();
+        Categorias.Add(new CategoriaDto(id, nombre));
+        return Task.FromResult(id);
+    }
+
+    public Task EliminarCategoriaAsync(
+        Guid idCategoria, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null) throw Error;
+        Categorias.RemoveAll(c => c.IdCategoria == idCategoria);
+        return Task.CompletedTask;
     }
 }

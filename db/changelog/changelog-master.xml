@@ -319,8 +319,43 @@
         <rollback/>
     </changeSet>
 
-    <changeSet id="scripts/06_procedimientos/025_sp_obtener_producto.sql" author="campusbite" runOnChange="true">
-        <sqlFile path="scripts/06_procedimientos/025_sp_obtener_producto.sql" splitStatements="false" stripComments="false"/>
+    <changeSet id="scripts/06_procedimientos/025_sp_listar_productos_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/025_sp_listar_productos_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/026_sp_listar_categorias.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/026_sp_listar_categorias.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/027_sp_actualizar_producto.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/027_sp_actualizar_producto.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/028_sp_toggle_disponible_producto.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/028_sp_toggle_disponible_producto.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/029_sp_eliminar_producto.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/029_sp_eliminar_producto.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/030_sp_crear_categoria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/030_sp_crear_categoria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/031_sp_eliminar_categoria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/031_sp_eliminar_categoria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/032_sp_obtener_producto.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/032_sp_obtener_producto.sql" splitStatements="false" stripComments="false"/>
         <rollback/>
     </changeSet>
 

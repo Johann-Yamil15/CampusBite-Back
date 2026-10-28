@@ -1,6 +1,7 @@
 using CampusBite.Application.Productos;
 using CampusBite.Application.Productos.Dtos;
 using CampusBite.Application.Tests.Cafeterias;
+using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Common.Exceptions;
 using Microsoft.Extensions.Logging;
@@ -347,6 +348,113 @@ public class ProductoServiceTests
         Assert.Equal([primera.ImagenUrl], _blobs.Eliminadas);
         Assert.Equal(segunda.ImagenUrl, _repositorio.ImagenActual);
     }
+
+    // ---- CRUD de productos y categorías (TEC-09, JJ) ----
+
+    [Fact]
+    public async Task Listar_pide_los_productos_con_el_actor_de_la_sesion()
+    {
+        _repositorio.Lista.Add(new ProductoDto { IdProducto = IdProducto, IdCafeteria = IdCafeteria, Nombre = "Café" });
+
+        var productos = await _servicio.ListarAsync(IdCafeteria);
+
+        Assert.Same(_repositorio.Lista, productos);
+        Assert.Equal((IdCafeteria, _usuario.Id), _repositorio.UltimoListado);
+    }
+
+    [Fact]
+    public async Task Actualizar_normaliza_los_datos_igual_que_el_alta()
+    {
+        await _servicio.ActualizarAsync(IdProducto, DatosProducto());
+
+        Assert.Equal((IdProducto, _usuario.Id, new DatosProducto("Chilaquiles verdes", null, 55.50m, null, true)),
+            _repositorio.UltimaEdicion);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Cambiar_disponibilidad_la_manda_con_el_actor_de_la_sesion(bool disponible)
+    {
+        await _servicio.ToggleDisponibleAsync(IdProducto, disponible);
+
+        Assert.Equal((IdProducto, disponible, _usuario.Id), _repositorio.UltimoCambioDisponible);
+    }
+
+    [Fact]
+    public async Task Eliminar_un_producto_con_imagen_borra_tambien_su_blob()
+    {
+        _repositorio.ImagenActual = UrlAnterior;
+
+        await _servicio.EliminarAsync(IdProducto);
+
+        Assert.Equal((IdProducto, _usuario.Id), _repositorio.UltimaEliminacion);
+        Assert.Equal([UrlAnterior], _blobs.Eliminadas);
+        Assert.Empty(_logger.Registros);
+    }
+
+    [Fact]
+    public async Task Eliminar_un_producto_sin_imagen_no_toca_Azure()
+    {
+        await _servicio.EliminarAsync(IdProducto);
+
+        Assert.Equal((IdProducto, _usuario.Id), _repositorio.UltimaEliminacion);
+        Assert.Empty(_blobs.Eliminadas);
+    }
+
+    [Fact]
+    public async Task Eliminar_aunque_Azure_no_responda_el_producto_queda_borrado_y_se_avisa()
+    {
+        _repositorio.ImagenActual = UrlAnterior;
+        _blobs.ErrorAlEliminar = new ServiceUnavailableException("No disponible");
+
+        await _servicio.EliminarAsync(IdProducto);
+
+        var aviso = Assert.Single(_logger.Registros);
+        Assert.Equal($"Imagen huérfana en Azure Blob Storage: no se pudo borrar {UrlAnterior} (se eliminó el producto)",
+            aviso.Mensaje);
+    }
+
+    [Fact]
+    public async Task Si_la_BD_no_deja_eliminar_no_se_borra_la_imagen()
+    {
+        _repositorio.ImagenActual = UrlAnterior;
+        _repositorio.Error = new ConflictException("El producto tiene 1 orden(es) activa(s); desactívalo en su lugar");
+
+        await Assert.ThrowsAsync<ConflictException>(() => _servicio.EliminarAsync(IdProducto));
+
+        Assert.Empty(_blobs.Eliminadas);
+    }
+
+    [Fact]
+    public async Task Listar_categorias_devuelve_las_de_esa_cafeteria()
+    {
+        _repositorio.Categorias.Add(new CategoriaDto(Guid.NewGuid(), "Bebidas"));
+
+        var categorias = await _servicio.ListarCategoriasAsync(IdCafeteria);
+
+        Assert.Same(_repositorio.Categorias, categorias);
+        Assert.Equal(IdCafeteria, _repositorio.UltimoListadoCategorias);
+    }
+
+    [Fact]
+    public async Task Crear_categoria_recorta_el_nombre_y_devuelve_el_id_nuevo()
+    {
+        var id = await _servicio.CrearCategoriaAsync(IdCafeteria, "  Bebidas ");
+
+        Assert.Equal(_repositorio.IdCategoriaNueva, id);
+        Assert.Equal((IdCafeteria, _usuario.Id, "Bebidas"), _repositorio.UltimaCategoriaCreada);
+    }
+
+    [Fact]
+    public async Task Eliminar_categoria_la_manda_con_el_actor_de_la_sesion()
+    {
+        var idCategoria = Guid.NewGuid();
+
+        await _servicio.EliminarCategoriaAsync(idCategoria);
+
+        Assert.Equal((idCategoria, _usuario.Id), _repositorio.UltimaCategoriaEliminada);
+    }
 }
 
 // Guarda lo que se registra para revisar nivel, mensaje ya armado y excepción
@@ -444,5 +552,66 @@ public class FakeProductoRepository : IProductoRepository
         var anterior = ImagenActual;
         ImagenActual = imagenUrl;
         return Task.FromResult(anterior);
+    }
+
+    // JJ-Sprint4 27/10/2026: TEC-09. CRUD de productos y categorías.
+    // JY-Sprint4 28/10/2026: cada método guarda con qué se llamó para probar el servicio (antes eran stubs vacíos)
+    public List<ProductoDto> Lista { get; } = [];
+    public List<CategoriaDto> Categorias { get; } = [];
+    public Guid IdCategoriaNueva { get; } = Guid.NewGuid();
+    public (Guid IdCafeteria, Guid IdActor)? UltimoListado { get; private set; }
+    public (Guid IdProducto, Guid IdActor, DatosProducto Datos)? UltimaEdicion { get; private set; }
+    public (Guid IdProducto, bool Disponible, Guid IdActor)? UltimoCambioDisponible { get; private set; }
+    public (Guid IdProducto, Guid IdActor)? UltimaEliminacion { get; private set; }
+    public Guid? UltimoListadoCategorias { get; private set; }
+    public (Guid IdCafeteria, Guid IdActor, string Nombre)? UltimaCategoriaCreada { get; private set; }
+    public (Guid IdCategoria, Guid IdActor)? UltimaCategoriaEliminada { get; private set; }
+
+    public Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        UltimoListado = (idCafeteria, idActor);
+        return Task.FromResult<IReadOnlyList<ProductoDto>>(Lista);
+    }
+
+    public Task ActualizarAsync(Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default)
+    {
+        UltimaEdicion = (idProducto, idActor, datos);
+        return Task.CompletedTask;
+    }
+
+    public Task ToggleDisponibleAsync(Guid idProducto, bool disponible, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        UltimoCambioDisponible = (idProducto, disponible, idActor);
+        return Task.CompletedTask;
+    }
+
+    // Devuelve la imagen que "tenía" el producto (ImagenActual)
+    public Task<string?> EliminarAsync(Guid idProducto, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        UltimaEliminacion = (idProducto, idActor);
+        return Task.FromResult(ImagenActual);
+    }
+
+    public Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(Guid idCafeteria, CancellationToken cancellationToken = default)
+    {
+        UltimoListadoCategorias = idCafeteria;
+        return Task.FromResult<IReadOnlyList<CategoriaDto>>(Categorias);
+    }
+
+    public Task<Guid> CrearCategoriaAsync(Guid idCafeteria, Guid idActor, string nombre, CancellationToken cancellationToken = default)
+    {
+        UltimaCategoriaCreada = (idCafeteria, idActor, nombre);
+        return Task.FromResult(IdCategoriaNueva);
+    }
+
+    public Task EliminarCategoriaAsync(Guid idCategoria, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        UltimaCategoriaEliminada = (idCategoria, idActor);
+        return Task.CompletedTask;
     }
 }

@@ -115,6 +115,35 @@ public class ProductoService : IProductoService
         }
     }
 
+    // JJ-Sprint4 27/10/2026: TEC-09. CRUD completo de productos y categorías
+    public Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, CancellationToken cancellationToken = default) =>
+        _productos.ListarAsync(idCafeteria, _usuario.Id, cancellationToken);
+
+    public Task ActualizarAsync(Guid idProducto, GuardarProductoDto dto, CancellationToken cancellationToken = default) =>
+        _productos.ActualizarAsync(idProducto, _usuario.Id, Normalizar(dto), cancellationToken);
+
+    public Task ToggleDisponibleAsync(Guid idProducto, bool disponible, CancellationToken cancellationToken = default) =>
+        _productos.ToggleDisponibleAsync(idProducto, disponible, _usuario.Id, cancellationToken);
+
+    // JY-Sprint4 28/10/2026: TEC-10. Si tenía imagen, se borra de Azure después de borrar el producto
+    public async Task EliminarAsync(Guid idProducto, CancellationToken cancellationToken = default)
+    {
+        var imagen = await _productos.EliminarAsync(idProducto, _usuario.Id, cancellationToken);
+        if (imagen is not null)
+        {
+            await EliminarSinFallarAsync(imagen, "se eliminó el producto");
+        }
+    }
+
+    public Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(Guid idCafeteria, CancellationToken cancellationToken = default) =>
+        _productos.ListarCategoriasAsync(idCafeteria, cancellationToken);
+
+    public Task<Guid> CrearCategoriaAsync(Guid idCafeteria, string nombre, CancellationToken cancellationToken = default) =>
+        _productos.CrearCategoriaAsync(idCafeteria, _usuario.Id, nombre.Trim(), cancellationToken);
+
+    public Task EliminarCategoriaAsync(Guid idCategoria, CancellationToken cancellationToken = default) =>
+        _productos.EliminarCategoriaAsync(idCategoria, _usuario.Id, cancellationToken);
+
     // Recorta espacios; una descripción en blanco se guarda como null
     private static DatosProducto Normalizar(GuardarProductoDto dto) => new(
         dto.Nombre.Trim(),
