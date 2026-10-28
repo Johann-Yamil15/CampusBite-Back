@@ -1,9 +1,9 @@
 -- =====================================================================
 -- CampusBite · Script consolidado de base de datos
 -- Versión : V1.0.0.008 (producción: sin datos de prueba)
--- Fecha   : 2026-10-27 18:14:47 -0600
+-- Fecha   : 2026-10-27 20:15:04 -0600
 -- Autor   : Joseph Yañez
--- Huella  : 02d95dd94e0d
+-- Huella  : 850ad486b61a
 -- Incluye : 65 scripts (ver orden.txt de cada módulo)
 --   - scripts/01_base/001_extensiones.sql
 --   - scripts/01_base/002_tipos.sql
@@ -1801,6 +1801,8 @@ END $$;
 -- p_id_producto lo genera la API: la imagen se sube a Azure antes del alta y su nombre lleva ese id.
 -- p_imagen_url puede ser NULL (producto sin foto). Nombre repetido en la cafetería (sin distinguir mayúsculas) -> 23505.
 -- p_producto: el producto creado como JSON (con el nombre de su categoría).
+--   Excepción intencional al patrón de sp_crear_cafeteria / sp_registrar_usuario (que solo devuelven el UUID):
+--   así la API responde el 201 en una sola vuelta a la BD, en una petición que ya es lenta por la subida a Azure.
 CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_id_producto  UUID,
   IN  p_id_cafeteria UUID,
@@ -1933,7 +1935,7 @@ END $$;
 
 
 -- Marca de versión visible con: SELECT obj_description('public'::regnamespace);
-COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.008 (2026-10-27 18:14:47 -0600)';
+COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.008 (2026-10-27 20:15:04 -0600)';
 
 COMMIT;
 

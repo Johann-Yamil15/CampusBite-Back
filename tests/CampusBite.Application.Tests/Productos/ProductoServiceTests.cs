@@ -3,6 +3,7 @@ using CampusBite.Application.Productos.Dtos;
 using CampusBite.Application.Tests.Cafeterias;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Common.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace CampusBite.Application.Tests.Productos;
 
@@ -16,11 +17,12 @@ public class ProductoServiceTests
     private readonly FakeBlobService _blobs = new();
     private readonly FakeProductoRepository _repositorio = new();
     private readonly FakeUsuarioActual _usuario = new() { Rol = RolUsuario.AdminCafeteria };
+    private readonly FakeLogger<ProductoService> _logger = new();
     private readonly ProductoService _servicio;
 
     public ProductoServiceTests()
     {
-        _servicio = new ProductoService(_repositorio, _blobs, _usuario);
+        _servicio = new ProductoService(_repositorio, _blobs, _usuario, _logger);
     }
 
     private static GuardarProductoDto DatosProducto() => new()
@@ -273,6 +275,35 @@ public class ProductoServiceTests
         var resultado = await Subir(Archivo(Png(), "image/png"));
 
         Assert.Equal(_blobs.Subidas[0].Url, resultado.ImagenUrl);
+        var aviso = Assert.Single(_logger.Registros);
+        Assert.Equal(LogLevel.Warning, aviso.Nivel);
+        Assert.Equal($"Imagen huérfana en Azure Blob Storage: no se pudo borrar {UrlAnterior} (fue reemplazada por una nueva)",
+            aviso.Mensaje);
+        Assert.Same(_blobs.ErrorAlEliminar, aviso.Excepcion);
+    }
+
+    [Fact]
+    public async Task Si_la_BD_rechaza_y_tampoco_se_puede_borrar_la_nueva_queda_el_aviso_y_se_propaga_el_error_de_la_BD()
+    {
+        _repositorio.Error = new ForbiddenException("Sin permiso para cambiar la imagen de este producto");
+        _blobs.ErrorAlEliminar = new ServiceUnavailableException("No disponible");
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => Subir(Archivo(Png(), "image/png")));
+
+        var aviso = Assert.Single(_logger.Registros);
+        Assert.Equal(LogLevel.Warning, aviso.Nivel);
+        Assert.Equal($"Imagen huérfana en Azure Blob Storage: no se pudo borrar {_blobs.Subidas[0].Url} (la BD rechazó el guardado)",
+            aviso.Mensaje);
+    }
+
+    [Fact]
+    public async Task Si_la_limpieza_sale_bien_no_deja_avisos()
+    {
+        _repositorio.ImagenActual = UrlAnterior;
+
+        await Subir(Archivo(Png(), "image/png"));
+
+        Assert.Empty(_logger.Registros);
     }
 
     [Fact]
@@ -285,6 +316,20 @@ public class ProductoServiceTests
         Assert.Equal([primera.ImagenUrl], _blobs.Eliminadas);
         Assert.Equal(segunda.ImagenUrl, _repositorio.ImagenActual);
     }
+}
+
+// Guarda lo que se registra para revisar nivel, mensaje ya armado y excepción
+public class FakeLogger<T> : ILogger<T>
+{
+    public List<(LogLevel Nivel, string Mensaje, Exception? Excepcion)> Registros { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+        Registros.Add((logLevel, formatter(state, exception), exception));
 }
 
 public class FakeBlobService : IBlobService

@@ -4,6 +4,8 @@
 -- p_id_producto lo genera la API: la imagen se sube a Azure antes del alta y su nombre lleva ese id.
 -- p_imagen_url puede ser NULL (producto sin foto). Nombre repetido en la cafetería (sin distinguir mayúsculas) -> 23505.
 -- p_producto: el producto creado como JSON (con el nombre de su categoría).
+--   Excepción intencional al patrón de sp_crear_cafeteria / sp_registrar_usuario (que solo devuelven el UUID):
+--   así la API responde el 201 en una sola vuelta a la BD, en una petición que ya es lenta por la subida a Azure.
 CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_id_producto  UUID,
   IN  p_id_cafeteria UUID,

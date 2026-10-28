@@ -238,6 +238,12 @@ Responde lo mismo que el cambio de imagen (400, 403, 404, 413, 503, 504) y adem�
 con ese nombre. Si la imagen no es válida no se crea el producto; si la BD rechaza el alta, se borra la imagen que
 ya se había subido. Un alta repetida por mala señal no duplica: la segunda responde 409.
 
+> **Decisión de diseño: el SP devuelve el producto completo.** `sp_crear_cafeteria` y `sp_registrar_usuario` solo
+> devuelven el UUID y la API pide el objeto aparte si lo necesita. `sp_crear_producto`, en cambio, devuelve el producto
+> ya creado como JSONB (con el nombre de su categoría) para responder el 201 en **una sola vuelta** a la BD, porque esta
+> petición ya es lenta (sube una imagen a Azure). Es una excepción intencional al patrón; si se agrega un
+> `sp_obtener_producto`, el alta puede volver al patrón de "solo UUID" sin cambiar la respuesta de la API.
+
 ## Imagen de producto (TEC-10)
 `POST /api/cafeterias/{idCafeteria}/productos/{idProducto}/imagen` · `multipart/form-data` con el campo `archivo`.
 Solo su encargado (`AdminCafeteria` de **esa** cafetería) o `AdminSistema`. La imagen se guarda en Azure Blob Storage
