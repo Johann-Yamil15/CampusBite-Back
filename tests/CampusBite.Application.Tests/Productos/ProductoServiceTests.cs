@@ -1,6 +1,7 @@
 using CampusBite.Application.Productos;
 using CampusBite.Application.Productos.Dtos;
 using CampusBite.Application.Tests.Cafeterias;
+using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Common.Exceptions;
 
@@ -357,4 +358,26 @@ public class FakeProductoRepository : IProductoRepository
         ImagenActual = imagenUrl;
         return Task.FromResult(anterior);
     }
+
+    // JJ-Sprint4 27/10/2026: TEC-09. Stubs de los nuevos métodos (no se prueban aquí; los tests de endpoint los cubren)
+    public Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<ProductoDto>>([]);
+
+    public Task ActualizarAsync(Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task ToggleDisponibleAsync(Guid idProducto, bool disponible, Guid idActor, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task EliminarAsync(Guid idProducto, Guid idActor, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task<IReadOnlyList<CategoriaDto>> ListarCategoriasAsync(Guid idCafeteria, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<CategoriaDto>>([]);
+
+    public Task<Guid> CrearCategoriaAsync(Guid idCafeteria, Guid idActor, string nombre, CancellationToken cancellationToken = default)
+        => Task.FromResult(Guid.NewGuid());
+
+    public Task EliminarCategoriaAsync(Guid idCategoria, Guid idActor, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }

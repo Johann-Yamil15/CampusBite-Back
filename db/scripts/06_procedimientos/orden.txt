@@ -43,3 +43,11 @@
 # TEC-09 (Sprint 3): alta de productos
 023_sp_validar_datos_producto.sql
 024_sp_crear_producto.sql
+# TEC-09 (Sprint 4): CRUD completo de productos y categorías (JJ)
+025_sp_listar_productos_cafeteria.sql
+026_sp_listar_categorias.sql
+027_sp_actualizar_producto.sql
+028_sp_toggle_disponible_producto.sql
+029_sp_eliminar_producto.sql
+030_sp_crear_categoria.sql
+031_sp_eliminar_categoria.sql
