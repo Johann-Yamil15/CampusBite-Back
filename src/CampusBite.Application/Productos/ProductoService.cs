@@ -27,6 +27,12 @@ public class ProductoService : IProductoService
         _logger = logger;
     }
 
+    public async Task<ProductoDto> ObtenerAsync(Guid idCafeteria, Guid idProducto, CancellationToken cancellationToken = default)
+    {
+        return await _productos.ObtenerAsync(idCafeteria, idProducto, _usuario.Id, cancellationToken)
+               ?? throw new NotFoundException("El producto no existe.");
+    }
+
     public async Task<ProductoDto> CrearAsync(
         Guid idCafeteria, GuardarProductoDto dto, ArchivoImagen? imagen, CancellationToken cancellationToken = default)
     {
@@ -36,12 +42,16 @@ public class ProductoService : IProductoService
 
         if (imagen is null)
         {
-            return await _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, null, cancellationToken);
+            await _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, null, cancellationToken);
+        }
+        else
+        {
+            var url = await SubirAsync(idProducto, imagen, cancellationToken);
+            await GuardarOBorrarAsync(url,
+                () => _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, url, cancellationToken));
         }
 
-        var url = await SubirAsync(idProducto, imagen, cancellationToken);
-        return await GuardarOBorrarAsync(url,
-            () => _productos.CrearAsync(idProducto, idCafeteria, idActor, datos, url, cancellationToken));
+        return await ObtenerAsync(idCafeteria, idProducto, cancellationToken);
     }
 
     public async Task<ImagenProductoDto> SubirImagenAsync(
@@ -50,8 +60,9 @@ public class ProductoService : IProductoService
         var idActor = _usuario.Id;
         var url = await SubirAsync(idProducto, archivo, cancellationToken);
 
-        var anterior = await GuardarOBorrarAsync(url,
-            () => _productos.ActualizarImagenAsync(idCafeteria, idProducto, idActor, url, cancellationToken));
+        string? anterior = null;
+        await GuardarOBorrarAsync(url,
+            async () => anterior = await _productos.ActualizarImagenAsync(idCafeteria, idProducto, idActor, url, cancellationToken));
 
         if (anterior is not null && anterior != url)
         {
@@ -74,11 +85,11 @@ public class ProductoService : IProductoService
     }
 
     // Guarda en la BD; si falla, la imagen recién subida ya no la usa nadie y se borra
-    private async Task<T> GuardarOBorrarAsync<T>(string urlNueva, Func<Task<T>> guardar)
+    private async Task GuardarOBorrarAsync(string urlNueva, Func<Task> guardar)
     {
         try
         {
-            return await guardar();
+            await guardar();
         }
         catch
         {

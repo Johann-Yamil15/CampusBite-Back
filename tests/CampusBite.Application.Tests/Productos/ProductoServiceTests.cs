@@ -47,6 +47,37 @@ public class ProductoServiceTests
         Assert.Empty(_blobs.Subidas);
     }
 
+    [Fact]
+    public async Task Crear_responde_con_el_producto_leido_de_la_BD_despues_de_guardarlo()
+    {
+        var creado = await Crear(imagen: null);
+
+        Assert.Equal((IdCafeteria, creado.IdProducto, _usuario.Id), _repositorio.UltimaConsulta);
+        Assert.Same(_repositorio.Productos[(IdCafeteria, creado.IdProducto)], creado);
+    }
+
+    // ---- Obtener un producto (TEC-09) ----
+
+    [Fact]
+    public async Task Obtener_devuelve_el_producto_consultando_con_el_actor_de_la_sesion()
+    {
+        var producto = new ProductoDto { IdProducto = IdProducto, IdCafeteria = IdCafeteria, Nombre = "Café" };
+        _repositorio.Productos[(IdCafeteria, IdProducto)] = producto;
+
+        var obtenido = await _servicio.ObtenerAsync(IdCafeteria, IdProducto);
+
+        Assert.Same(producto, obtenido);
+        Assert.Equal((IdCafeteria, IdProducto, _usuario.Id), _repositorio.UltimaConsulta);
+    }
+
+    [Fact]
+    public async Task Obtener_un_producto_que_no_existe_o_no_puede_ver_es_NotFound()
+    {
+        var error = await Assert.ThrowsAsync<NotFoundException>(() => _servicio.ObtenerAsync(IdCafeteria, IdProducto));
+
+        Assert.Equal("El producto no existe.", error.Message);
+    }
+
     [Theory]
     [InlineData("  Con pollo y crema ", "Con pollo y crema")]
     [InlineData(null, null)]
@@ -371,8 +402,19 @@ public class FakeProductoRepository : IProductoRepository
     public Exception? Error { get; set; }
     public (Guid IdCafeteria, Guid IdProducto, Guid IdActor, string Url)? UltimaActualizacion { get; private set; }
     public (Guid IdProducto, Guid IdCafeteria, Guid IdActor, DatosProducto Datos, string? Url)? UltimaCreacion { get; private set; }
+    public (Guid IdCafeteria, Guid IdProducto, Guid IdActor)? UltimaConsulta { get; private set; }
 
-    public Task<ProductoDto> CrearAsync(
+    // Lo que "hay en la BD", por (cafetería, producto); el alta agrega aquí
+    public Dictionary<(Guid IdCafeteria, Guid IdProducto), ProductoDto> Productos { get; } = [];
+
+    public Task<ProductoDto?> ObtenerAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default)
+    {
+        UltimaConsulta = (idCafeteria, idProducto, idActor);
+        return Task.FromResult(Productos.GetValueOrDefault((idCafeteria, idProducto)));
+    }
+
+    public Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default)
     {
@@ -382,11 +424,12 @@ public class FakeProductoRepository : IProductoRepository
         }
 
         UltimaCreacion = (idProducto, idCafeteria, idActor, datos, imagenUrl);
-        return Task.FromResult(new ProductoDto
+        Productos[(idCafeteria, idProducto)] = new ProductoDto
         {
             IdProducto = idProducto, IdCafeteria = idCafeteria, IdCategoria = datos.IdCategoria, Nombre = datos.Nombre,
             Descripcion = datos.Descripcion, Precio = datos.Precio, ImagenUrl = imagenUrl, Disponible = datos.Disponible
-        });
+        };
+        return Task.CompletedTask;
     }
 
     public Task<string?> ActualizarImagenAsync(

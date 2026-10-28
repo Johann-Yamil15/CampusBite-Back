@@ -1,10 +1,10 @@
 -- =====================================================================
 -- CampusBite · Script consolidado de base de datos
 -- Versión : V1.0.0.008 (producción: sin datos de prueba)
--- Fecha   : 2026-10-27 20:15:04 -0600
+-- Fecha   : 2026-10-27 20:30:15 -0600
 -- Autor   : Joseph Yañez
--- Huella  : 850ad486b61a
--- Incluye : 65 scripts (ver orden.txt de cada módulo)
+-- Huella  : 32ed1ae51819
+-- Incluye : 66 scripts (ver orden.txt de cada módulo)
 --   - scripts/01_base/001_extensiones.sql
 --   - scripts/01_base/002_tipos.sql
 --   - scripts/01_base/003_rol_app_backend.sql
@@ -67,6 +67,7 @@
 --   - scripts/06_procedimientos/022_sp_actualizar_imagen_producto.sql
 --   - scripts/06_procedimientos/023_sp_validar_datos_producto.sql
 --   - scripts/06_procedimientos/024_sp_crear_producto.sql
+--   - scripts/06_procedimientos/025_sp_obtener_producto.sql
 --   - scripts/07_seguridad/001_privilegios.sql
 --   - scripts/07_seguridad/002_limites_rol_api.sql
 --   - scripts/07_seguridad/003_rls.sql
@@ -1797,12 +1798,13 @@ END $$;
 -- ---------------------------------------------------------------------
 -- JY-Sprint4 27/10/2026: TEC-09. Alta de un producto en el menú de una cafetería. Su encargado o admin_sistema.
 --   CALL sp_crear_producto(<id_producto>, <id_cafeteria>, <id_actor>, <id_categoria o NULL>, 'Chilaquiles verdes',
---                          'Con pollo y crema', 55.00, true, 'https://.../productos/<id_producto>_<fecha>.webp', NULL);
+--                          'Con pollo y crema', 55.00, true, 'https://.../productos/<id_producto>_<fecha>.webp');
 -- p_id_producto lo genera la API: la imagen se sube a Azure antes del alta y su nombre lleva ese id.
 -- p_imagen_url puede ser NULL (producto sin foto). Nombre repetido en la cafetería (sin distinguir mayúsculas) -> 23505.
--- p_producto: el producto creado como JSON (con el nombre de su categoría).
---   Excepción intencional al patrón de sp_crear_cafeteria / sp_registrar_usuario (que solo devuelven el UUID):
---   así la API responde el 201 en una sola vuelta a la BD, en una petición que ya es lenta por la subida a Azure.
+-- Solo guarda, igual que los demás sp_crear_*: la API ya tiene el id y lee el producto con sp_obtener_producto.
+-- La primera versión devolvía el producto como JSONB (OUT p_producto); se quita esa firma.
+DROP PROCEDURE IF EXISTS sp_crear_producto(UUID, UUID, UUID, UUID, VARCHAR, VARCHAR, NUMERIC, BOOLEAN, VARCHAR, JSONB);
+
 CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_id_producto  UUID,
   IN  p_id_cafeteria UUID,
@@ -1812,8 +1814,7 @@ CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_descripcion  VARCHAR,
   IN  p_precio       NUMERIC,
   IN  p_disponible   BOOLEAN,
-  IN  p_imagen_url   VARCHAR,
-  OUT p_producto     JSONB
+  IN  p_imagen_url   VARCHAR
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
@@ -1833,16 +1834,41 @@ BEGIN
   INSERT INTO producto (id_producto, id_cafeteria, id_categoria, nombre, descripcion, precio, imagen_url, disponible)
   VALUES (p_id_producto, p_id_cafeteria, p_id_categoria, btrim(p_nombre), NULLIF(btrim(p_descripcion), ''),
           p_precio, p_imagen_url, COALESCE(p_disponible, true));
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'Ya existe un producto con el nombre "%" en esta cafetería', btrim(p_nombre) USING ERRCODE = 'unique_violation';
+END $$;
 
+
+-- ---------------------------------------------------------------------
+-- ---> scripts/06_procedimientos/025_sp_obtener_producto.sql
+-- ---------------------------------------------------------------------
+-- JY-Sprint4 27/10/2026: TEC-09. Un producto de una cafetería por id.
+--   CALL sp_obtener_producto(<id_cafeteria>, <id_producto>, <id_actor>, NULL);
+-- p_producto: el producto como JSON (con el nombre de su categoría), o NULL si no existe o no es de esa cafetería.
+-- Un producto no disponible, o de una cafetería inactiva, solo lo ven su encargado y admin_sistema; para los demás
+-- también es NULL (igual que sp_obtener_cafeteria: no se revela que existe). Lo usa también el alta (sp_crear_producto
+-- solo guarda) para responder con el producto creado.
+CREATE OR REPLACE PROCEDURE sp_obtener_producto(
+  IN  p_id_cafeteria UUID,
+  IN  p_id_producto  UUID,
+  IN  p_id_actor     UUID,
+  OUT p_producto     JSONB
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
   SELECT to_jsonb(v)
     INTO p_producto
     FROM (SELECT p.id_producto, p.id_cafeteria, p.id_categoria, cat.nombre AS categoria, p.nombre, p.descripcion,
                  p.precio, p.imagen_url, p.disponible, p.creado_en, p.actualizado_en
             FROM producto p
+            JOIN cafeteria c        ON c.id_cafeteria = p.id_cafeteria
             LEFT JOIN categoria cat ON cat.id_categoria = p.id_categoria
-           WHERE p.id_producto = p_id_producto) v;
-EXCEPTION WHEN unique_violation THEN
-  RAISE EXCEPTION 'Ya existe un producto con el nombre "%" en esta cafetería', btrim(p_nombre) USING ERRCODE = 'unique_violation';
+           WHERE p.id_producto = p_id_producto
+             AND p.id_cafeteria = p_id_cafeteria
+             AND ((c.activa AND p.disponible) OR EXISTS (
+                   SELECT 1 FROM usuario u
+                    WHERE u.id_usuario = p_id_actor AND u.activo
+                      AND (u.id_rol = 3 OR (u.id_rol = 2 AND u.id_cafeteria = c.id_cafeteria))))) v;
 END $$;
 
 
@@ -1883,7 +1909,8 @@ GRANT EXECUTE ON PROCEDURE
   sp_restablecer_password,
   sp_autorregistrar_cafeteria,
   sp_actualizar_imagen_producto,
-  sp_crear_producto
+  sp_crear_producto,
+  sp_obtener_producto
 TO app_backend;
 -- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria,
 -- sp_validar_datos_producto.
@@ -1935,7 +1962,7 @@ END $$;
 
 
 -- Marca de versión visible con: SELECT obj_description('public'::regnamespace);
-COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.008 (2026-10-27 20:15:04 -0600)';
+COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.008 (2026-10-27 20:30:15 -0600)';
 
 COMMIT;
 

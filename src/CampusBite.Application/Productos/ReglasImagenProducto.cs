@@ -29,10 +29,8 @@ public static class ReglasImagenProducto
     // Devuelve el Content-Type normalizado ("image/png"); ignora parámetros como "; charset=..."
     public static string ValidarTipo(string? contentType)
     {
-        var tipo = contentType?.Split(';', 2)[0].Trim() ?? string.Empty;
-        return TiposPermitidos.TryGetValue(tipo, out var normalizado)
-            ? normalizado
-            : throw new BusinessRuleException("Solo se aceptan imágenes JPEG, PNG o WebP.");
+        var normalizado = contentType is null ? null : TiposPermitidos.GetValueOrDefault(contentType.Split(';', 2)[0].Trim());
+        return normalizado ?? throw new BusinessRuleException("Solo se aceptan imágenes JPEG, PNG o WebP.");
     }
 
     public static void ValidarTamano(long bytes)
@@ -57,9 +55,9 @@ public static class ReglasImagenProducto
         int leidos;
         while ((leidos = await origen.ReadAsync(buffer, cancellationToken)) > 0)
         {
+            // Sin Dispose: un MemoryStream no guarda recursos del sistema, el GC recoge su búfer
             if (copia.Length + leidos > TamanoMaximoBytes)
             {
-                await copia.DisposeAsync();
                 throw ExcedeTamano();
             }
 

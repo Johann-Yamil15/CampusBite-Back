@@ -43,3 +43,4 @@
 # TEC-09 (Sprint 3): alta de productos
 023_sp_validar_datos_producto.sql
 024_sp_crear_producto.sql
+032_sp_obtener_producto.sql

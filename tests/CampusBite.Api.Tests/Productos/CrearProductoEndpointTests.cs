@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace CampusBite.Api.Tests.Productos;
 
-// JY-Sprint4 27/10/2026: TEC-09. POST /api/cafeterias/{id}/productos (multipart) con la API real en memoria:
+// JY-Sprint4 27/10/2026: TEC-09. POST /api/cafeterias/{id}/productos (multipart) y GET .../productos/{idProducto} con la API real en memoria:
 // servicio y validaciones reales; solo el almacén (Azure) y el repositorio (BD) son falsos.
 // La imagen opcional debe seguir exactamente las mismas reglas que POST .../imagen.
 public class CrearProductoEndpointTests : IClassFixture<ApiDePrueba>
@@ -92,6 +92,42 @@ public class CrearProductoEndpointTests : IClassFixture<ApiDePrueba>
         Assert.Null(cuerpo["imagenUrl"]);
         Assert.True(cuerpo["disponible"]!.GetValue<bool>());
         Assert.Empty(_almacen.Subidas);
+    }
+
+    [Fact]
+    public async Task El_201_trae_Location_al_GET_del_producto_y_ese_GET_lo_devuelve()
+    {
+        var cliente = Cliente(RolUsuario.AdminCafeteria);
+
+        var respuesta = await cliente.PostAsync(Ruta, Formulario());
+
+        var id = (await respuesta.Content.ReadFromJsonAsync<JsonObject>())!["idProducto"]!.GetValue<Guid>();
+        Assert.Equal($"{Ruta}/{id}", respuesta.Headers.Location?.AbsolutePath);
+        var leido = await cliente.GetFromJsonAsync<JsonObject>(respuesta.Headers.Location);
+        Assert.Equal(id, leido!["idProducto"]!.GetValue<Guid>());
+        Assert.Equal("Chilaquiles verdes", leido["nombre"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(RolUsuario.Alumno)]
+    [InlineData(RolUsuario.AdminCafeteria)]
+    public async Task Cualquier_usuario_con_sesion_puede_pedir_un_producto_y_si_no_existe_es_404(RolUsuario rol)
+    {
+        var respuesta = await Cliente(rol).GetAsync($"{Ruta}/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
+        Assert.Contains("El producto no existe.", await respuesta.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Sin_sesion_el_GET_de_un_producto_es_401()
+    {
+        var cliente = Cliente(RolUsuario.Alumno);
+        cliente.DefaultRequestHeaders.Authorization = null;
+
+        var respuesta = await cliente.GetAsync($"{Ruta}/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
     }
 
     [Fact]

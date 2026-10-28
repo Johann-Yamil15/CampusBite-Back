@@ -5,7 +5,10 @@ namespace CampusBite.Application.Productos;
 // JY-Sprint4 27/10/2026: casos de uso de productos. Quién actúa sale de IUsuarioActual.
 public interface IProductoService
 {
-    // TEC-09: alta de producto. imagen es opcional; si viene, pasa por las mismas reglas que SubirImagenAsync
+    // TEC-09: un producto por id. NotFoundException si no existe o el usuario no puede verlo
+    Task<ProductoDto> ObtenerAsync(Guid idCafeteria, Guid idProducto, CancellationToken cancellationToken = default);
+
+    // TEC-09: alta de producto; responde con el producto ya guardado (ObtenerAsync). imagen es opcional; si viene, pasa por las mismas reglas que SubirImagenAsync
     Task<ProductoDto> CrearAsync(
         Guid idCafeteria, GuardarProductoDto dto, ArchivoImagen? imagen, CancellationToken cancellationToken = default);
 

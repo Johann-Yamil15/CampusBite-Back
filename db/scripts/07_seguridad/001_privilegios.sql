@@ -32,7 +32,8 @@ GRANT EXECUTE ON PROCEDURE
   sp_restablecer_password,
   sp_autorregistrar_cafeteria,
   sp_actualizar_imagen_producto,
-  sp_crear_producto
+  sp_crear_producto,
+  sp_obtener_producto
 TO app_backend;
 -- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria,
 -- sp_validar_datos_producto.

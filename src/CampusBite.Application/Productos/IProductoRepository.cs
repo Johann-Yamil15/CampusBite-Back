@@ -8,8 +8,14 @@ namespace CampusBite.Application.Productos;
 // (nombre repetido) y BusinessRuleException (datos inválidos).
 public interface IProductoRepository
 {
-    // idProducto lo genera el servicio: la imagen se sube antes del alta y su nombre lleva ese id
-    Task<ProductoDto> CrearAsync(
+    // null si no existe, es de otra cafetería o el actor no puede verlo (no disponible o cafetería inactiva y no la
+    // administra)
+    Task<ProductoDto?> ObtenerAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default);
+
+    // idProducto lo genera el servicio: la imagen se sube antes del alta y su nombre lleva ese id.
+    // Solo guarda (como los demás sp_crear_*); el producto se lee después con ObtenerAsync.
+    Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default);
 

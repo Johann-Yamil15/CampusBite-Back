@@ -106,7 +106,8 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
 | `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
 | `CALL sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | Baja lógica o reactivación. Solo `admin_sistema`. Con órdenes en curso → `55006` |
-| `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url, NULL)` | `p_producto` (JSON) | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
+| `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url)` | — | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
+| `CALL sp_obtener_producto(id_cafeteria, id_producto, id_actor, NULL)` | `p_producto` (JSON o `NULL`) | Un producto con el nombre de su categoría; `NULL` si no existe, es de otra cafetería, o no está disponible / su cafetería está inactiva y el actor no la administra |
 | `CALL sp_actualizar_imagen_producto(id_cafeteria, id_producto, id_actor, imagen_url, NULL)` | `p_imagen_anterior` | Guarda la URL de la imagen y devuelve la que tenía antes (para borrar ese blob). Su encargado o `admin_sistema`; producto de otra cafetería → `P0002` |
 
 Al cancelar una orden, su pago pasa solo a `reembolsado` (si ya estaba pagado) o `cancelado`.
@@ -238,11 +239,12 @@ Responde lo mismo que el cambio de imagen (400, 403, 404, 413, 503, 504) y adem�
 con ese nombre. Si la imagen no es válida no se crea el producto; si la BD rechaza el alta, se borra la imagen que
 ya se había subido. Un alta repetida por mala señal no duplica: la segunda responde 409.
 
-> **Decisión de diseño: el SP devuelve el producto completo.** `sp_crear_cafeteria` y `sp_registrar_usuario` solo
-> devuelven el UUID y la API pide el objeto aparte si lo necesita. `sp_crear_producto`, en cambio, devuelve el producto
-> ya creado como JSONB (con el nombre de su categoría) para responder el 201 en **una sola vuelta** a la BD, porque esta
-> petición ya es lenta (sube una imagen a Azure). Es una excepción intencional al patrón; si se agrega un
-> `sp_obtener_producto`, el alta puede volver al patrón de "solo UUID" sin cambiar la respuesta de la API.
+Igual que en cafeterías, `sp_crear_producto` solo guarda y la API lee el producto con `sp_obtener_producto` para
+responder; el 201 trae `Location` al GET del producto.
+
+`GET /api/cafeterias/{idCafeteria}/productos/{idProducto}` · cualquier usuario con sesión. Devuelve el mismo objeto
+que el alta. Un producto no disponible, o de una cafetería inactiva, solo lo ven su encargado y `AdminSistema`; para
+los demás es **404**, igual que si no existiera o fuera de otra cafetería.
 
 ## Imagen de producto (TEC-10)
 `POST /api/cafeterias/{idCafeteria}/productos/{idProducto}/imagen` · `multipart/form-data` con el campo `archivo`.

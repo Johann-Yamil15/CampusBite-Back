@@ -52,8 +52,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 24, format('Se esperaban 24 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 24 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 25, format('Se esperaban 25 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 25 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
@@ -568,6 +568,7 @@ DECLARE
   c_cafe    UUID := '00000000-0000-0000-0000-0000000000c1';
   c_cat     UUID := '00000000-0000-0000-0000-0000000000d2';     -- Bebidas (de c1)
   v_id      UUID := gen_random_uuid();
+  v_id2     UUID;
   v_url     VARCHAR;
   v_json    JSONB;
   v_ok      BOOLEAN;
@@ -575,38 +576,41 @@ BEGIN
   v_url := format('https://campusbite.blob.core.windows.net/productos/%s_20261027T120000000Z.webp', v_id);
   SET LOCAL ROLE app_backend;
 
-  CALL sp_crear_producto(v_id, c_cafe, c_admin, c_cat, '  Agua de jamaica ', '  ', 18.50, NULL, v_url, v_json);
+  CALL sp_crear_producto(v_id, c_cafe, c_admin, c_cat, '  Agua de jamaica ', '  ', 18.50, NULL, v_url);
+  CALL sp_obtener_producto(c_cafe, v_id, c_admin, v_json);
   ASSERT (v_json->>'id_producto')::uuid = v_id, 'Debe usar el id que manda la API';
   ASSERT v_json->>'nombre' = 'Agua de jamaica', 'El nombre se guarda recortado';
   ASSERT v_json->>'descripcion' IS NULL, 'Una descripción en blanco se guarda como NULL';
   ASSERT v_json->>'categoria' = 'Bebidas' AND (v_json->>'precio')::numeric = 18.50, 'Debe devolver categoría y precio';
   ASSERT (v_json->>'disponible')::boolean AND v_json->>'imagen_url' = v_url, 'Disponible por defecto y con su imagen';
 
-  CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_sistema, NULL, 'Sin foto', NULL, 10, false, NULL, v_json);
+  v_id2 := gen_random_uuid();
+  CALL sp_crear_producto(v_id2, c_cafe, c_sistema, NULL, 'Sin foto', NULL, 10, false, NULL);
+  CALL sp_obtener_producto(c_cafe, v_id2, c_sistema, v_json);
   ASSERT v_json->>'imagen_url' IS NULL AND NOT (v_json->>'disponible')::boolean, 'Sin imagen y no disponible';
 
   v_ok := false;
-  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'AGUA DE JAMAICA', NULL, 20, true, NULL, v_json);
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'AGUA DE JAMAICA', NULL, 20, true, NULL);
   EXCEPTION WHEN unique_violation THEN v_ok := true; END;
   ASSERT v_ok, 'Un nombre repetido (sin distinguir mayúsculas) debió rechazarse con 23505';
   v_ok := false;
-  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_alumno, NULL, 'Del alumno', NULL, 20, true, NULL, v_json);
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_alumno, NULL, 'Del alumno', NULL, 20, true, NULL);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'Un alumno no debe crear productos';
   v_ok := false;
-  BEGIN CALL sp_crear_producto(gen_random_uuid(), gen_random_uuid(), c_sistema, NULL, 'Huérfano', NULL, 20, true, NULL, v_json);
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), gen_random_uuid(), c_sistema, NULL, 'Huérfano', NULL, 20, true, NULL);
   EXCEPTION WHEN no_data_found THEN v_ok := true; END;
   ASSERT v_ok, 'Una cafetería que no existe debe ser "no existe"';
   v_ok := false;
-  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, gen_random_uuid(), 'Otra cat', NULL, 20, true, NULL, v_json);
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, gen_random_uuid(), 'Otra cat', NULL, 20, true, NULL);
   EXCEPTION WHEN check_violation THEN v_ok := true; END;
   ASSERT v_ok, 'Una categoría de otra cafetería debió rechazarse';
   v_ok := false;
-  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'Caro', NULL, 10.555, true, NULL, v_json);
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'Caro', NULL, 10.555, true, NULL);
   EXCEPTION WHEN check_violation THEN v_ok := true; END;
   ASSERT v_ok, 'Un precio con más de 2 decimales debió rechazarse';
   v_ok := false;
-  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL mala', NULL, 10, true, 'ftp://x/y.png', v_json);
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL mala', NULL, 10, true, 'ftp://x/y.png');
   EXCEPTION WHEN check_violation THEN v_ok := true; END;
   ASSERT v_ok, 'Una URL que no es http(s) debió rechazarse';
   RESET ROLE;
@@ -619,5 +623,59 @@ BEGIN
   RAISE NOTICE 'OK 24: alta de producto con o sin imagen, nombre único por cafetería, permisos y datos validados';
 END $$;
 
+-- 25. Obtener un producto (TEC-09) -------------------------------------------------
+-- JY-Sprint4 27/10/2026: NULL si no existe o es de otra cafetería; uno no disponible o de una cafetería inactiva
+-- solo lo ven su encargado y admin_sistema.
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';
+  c_admin   UUID := '00000000-0000-0000-0000-0000000000a2';     -- encargado de c1
+  c_sistema UUID := '00000000-0000-0000-0000-0000000000a3';
+  c_cafe    UUID := '00000000-0000-0000-0000-0000000000c1';
+  c_cat     UUID := '00000000-0000-0000-0000-0000000000d2';     -- Bebidas (de c1)
+  v_visible UUID := gen_random_uuid();
+  v_oculto  UUID := gen_random_uuid();
+  v_otra    UUID;
+  v_json    JSONB;
+BEGIN
+  SET LOCAL ROLE app_backend;
+  CALL sp_crear_producto(v_visible, c_cafe, c_admin, c_cat, 'Horchata', 'Natural', 20, true, NULL);
+  CALL sp_crear_producto(v_oculto, c_cafe, c_admin, NULL, 'Temporada', NULL, 30, false, NULL);
+
+  CALL sp_obtener_producto(c_cafe, v_visible, c_alumno, v_json);
+  ASSERT (v_json->>'id_producto')::uuid = v_visible AND v_json->>'categoria' = 'Bebidas'
+         AND v_json->>'descripcion' = 'Natural', 'Un alumno ve un producto disponible, con su categoría';
+
+  CALL sp_obtener_producto(c_cafe, v_oculto, c_alumno, v_json);
+  ASSERT v_json IS NULL, 'Un alumno no debe ver un producto no disponible';
+  CALL sp_obtener_producto(c_cafe, v_oculto, c_admin, v_json);
+  ASSERT (v_json->>'id_producto')::uuid = v_oculto, 'Su encargado sí ve el producto no disponible';
+  CALL sp_obtener_producto(c_cafe, v_oculto, c_sistema, v_json);
+  ASSERT v_json IS NOT NULL, 'admin_sistema ve el producto no disponible';
+
+  CALL sp_obtener_producto(c_cafe, gen_random_uuid(), c_sistema, v_json);
+  ASSERT v_json IS NULL, 'Un producto que no existe es NULL';
+  RESET ROLE;
+
+  SELECT id_cafeteria INTO v_otra FROM cafeteria WHERE id_cafeteria <> c_cafe LIMIT 1;
+  IF v_otra IS NOT NULL THEN
+    SET LOCAL ROLE app_backend;
+    CALL sp_obtener_producto(v_otra, v_visible, c_sistema, v_json);
+    ASSERT v_json IS NULL, 'Con el id de otra cafetería el producto es NULL';
+    RESET ROLE;
+  END IF;
+
+  UPDATE cafeteria SET activa = false WHERE id_cafeteria = c_cafe;
+  SET LOCAL ROLE app_backend;
+  CALL sp_obtener_producto(c_cafe, v_visible, c_alumno, v_json);
+  ASSERT v_json IS NULL, 'Un alumno no ve productos de una cafetería inactiva';
+  CALL sp_obtener_producto(c_cafe, v_visible, c_admin, v_json);
+  ASSERT v_json IS NOT NULL, 'Su encargado sí los ve';
+  RESET ROLE;
+  UPDATE cafeteria SET activa = true WHERE id_cafeteria = c_cafe;
+
+  RAISE NOTICE 'OK 25: producto por id, oculto si no está disponible o la cafetería está inactiva, salvo para quien la administra';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 24 de 24 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 25 de 25 OK (transacción revertida)'

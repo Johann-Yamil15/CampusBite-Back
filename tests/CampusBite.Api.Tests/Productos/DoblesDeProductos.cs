@@ -35,7 +35,14 @@ internal sealed class RepositorioFalso : IProductoRepository
     public Exception? Error { get; set; }
     public DatosProducto? UltimosDatos { get; private set; }
 
-    public Task<ProductoDto> CrearAsync(
+    // Lo que "hay en la BD", por (cafetería, producto); el alta agrega aquí
+    public Dictionary<(Guid IdCafeteria, Guid IdProducto), ProductoDto> Productos { get; } = [];
+
+    public Task<ProductoDto?> ObtenerAsync(
+        Guid idCafeteria, Guid idProducto, Guid idActor, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Productos.GetValueOrDefault((idCafeteria, idProducto)));
+
+    public Task CrearAsync(
         Guid idProducto, Guid idCafeteria, Guid idActor, DatosProducto datos, string? imagenUrl,
         CancellationToken cancellationToken = default)
     {
@@ -46,12 +53,13 @@ internal sealed class RepositorioFalso : IProductoRepository
 
         UltimosDatos = datos;
         ImagenActual = imagenUrl;
-        return Task.FromResult(new ProductoDto
+        Productos[(idCafeteria, idProducto)] = new ProductoDto
         {
             IdProducto = idProducto, IdCafeteria = idCafeteria, IdCategoria = datos.IdCategoria, Nombre = datos.Nombre,
             Descripcion = datos.Descripcion, Precio = datos.Precio, ImagenUrl = imagenUrl, Disponible = datos.Disponible,
             CreadoEn = DateTimeOffset.UtcNow, ActualizadoEn = DateTimeOffset.UtcNow
-        });
+        };
+        return Task.CompletedTask;
     }
 
     public Task<string?> ActualizarImagenAsync(
