@@ -5,6 +5,8 @@ namespace CampusBite.Api.Common.Middleware;
 // JJ-Sprint2 09/10/2026: traduce las excepciones del dominio a su código HTTP y responde con un ProblemDetails uniforme
 public class ExceptionMiddleware
 {
+    private const string SegundosParaReintentar = "5";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionMiddleware> _logger;
     private readonly IHostEnvironment _env;
@@ -24,7 +26,13 @@ public class ExceptionMiddleware
         }
         catch (DomainException ex)
         {
-            await ProblemaHttp.EscribirAsync(context, ObtenerStatusCode(ex), ex.Message);
+            var statusCode = ObtenerStatusCode(ex);
+            // JY-Sprint4 27/10/2026: TEC-10, le dice al cliente cuándo reintentar (el front puede esperar y repetir solo)
+            if (statusCode == StatusCodes.Status503ServiceUnavailable)
+            {
+                context.Response.Headers.RetryAfter = SegundosParaReintentar;
+            }
+            await ProblemaHttp.EscribirAsync(context, statusCode, ex.Message);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -46,6 +54,7 @@ public class ExceptionMiddleware
         ForbiddenException => StatusCodes.Status403Forbidden,
         NotFoundException => StatusCodes.Status404NotFound,
         ConflictException => StatusCodes.Status409Conflict,
+        ServiceUnavailableException => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status400BadRequest
     };
 }

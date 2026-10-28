@@ -62,6 +62,13 @@ public static class Procedimientos
     public static NpgsqlParameter Id(string nombre, Guid valor) =>
         new(nombre, NpgsqlDbType.Uuid) { Value = valor };
 
+    // JY-Sprint4 27/10/2026: TEC-09, id opcional (p. ej. categoría de un producto) y montos
+    public static NpgsqlParameter IdOpcional(string nombre, Guid? valor) =>
+        new(nombre, NpgsqlDbType.Uuid) { Value = (object?)valor ?? DBNull.Value };
+
+    public static NpgsqlParameter Numero(string nombre, decimal valor) =>
+        new(nombre, NpgsqlDbType.Numeric) { Value = valor };
+
     public static NpgsqlParameter Logico(string nombre, bool valor) =>
         new(nombre, NpgsqlDbType.Boolean) { Value = valor };
 

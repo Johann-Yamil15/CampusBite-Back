@@ -38,3 +38,8 @@
 020_sp_restablecer_password.sql
 # TEC-11 (Sprint 3): autorregistro de un negocio (encargado + cafetería)
 021_sp_autorregistrar_cafeteria.sql
+# TEC-10 (Sprint 3): imagen de producto (el archivo vive en Azure Blob Storage; aquí solo su URL)
+022_sp_actualizar_imagen_producto.sql
+# TEC-09 (Sprint 3): alta de productos
+023_sp_validar_datos_producto.sql
+024_sp_crear_producto.sql
