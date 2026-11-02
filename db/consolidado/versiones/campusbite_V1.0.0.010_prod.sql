@@ -1,9 +1,9 @@
 -- =====================================================================
 -- CampusBite · Script consolidado de base de datos
 -- Versión : V1.0.0.010 (producción: sin datos de prueba)
--- Fecha   : 2026-11-01 22:43:46 -0600
+-- Fecha   : 2026-11-01 22:59:31 -0600
 -- Autor   : Joseph Yañez
--- Huella  : 536d9120e890
+-- Huella  : 71d0e87ede67
 -- Incluye : 76 scripts (ver orden.txt de cada módulo)
 --   - scripts/01_base/001_extensiones.sql
 --   - scripts/01_base/002_tipos.sql
@@ -1802,8 +1802,9 @@ CREATE OR REPLACE PROCEDURE sp_actualizar_imagen_producto(
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-  -- http:// solo para el emulador local (Azurite); en Azure siempre es https://
-  IF p_imagen_url IS NULL OR p_imagen_url !~ '^https?://[^[:space:]]+$' OR length(p_imagen_url) > 255 THEN
+  -- JY-Sprint4 31/10/2026: https:// obligatorio (la PWA bloquea imágenes http); http:// solo hacia localhost
+  -- para el emulador local (Azurite)
+  IF p_imagen_url IS NULL OR p_imagen_url !~ '^(https://|http://(localhost|127\.0\.0\.1)[:/])[^[:space:]]+$' OR length(p_imagen_url) > 255 THEN
     RAISE EXCEPTION 'La URL de la imagen no es válida' USING ERRCODE = 'check_violation';
   END IF;
 
@@ -1852,7 +1853,7 @@ BEGIN
     RAISE EXCEPTION 'El precio debe ser mayor a 0, menor a 1,000,000 y con máximo 2 decimales' USING ERRCODE = 'check_violation';
   END IF;
   -- Misma regla que sp_actualizar_imagen_producto; http:// solo para el emulador local (Azurite)
-  IF p_imagen_url IS NOT NULL AND (p_imagen_url !~ '^https?://[^[:space:]]+$' OR length(p_imagen_url) > 255) THEN
+  IF p_imagen_url IS NOT NULL AND (p_imagen_url !~ '^(https://|http://(localhost|127\.0\.0\.1)[:/])[^[:space:]]+$' OR length(p_imagen_url) > 255) THEN
     RAISE EXCEPTION 'La URL de la imagen no es válida' USING ERRCODE = 'check_violation';
   END IF;
   IF p_id_categoria IS NOT NULL AND NOT EXISTS (
@@ -2358,7 +2359,7 @@ END $$;
 
 
 -- Marca de versión visible con: SELECT obj_description('public'::regnamespace);
-COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.010 (2026-11-01 22:43:46 -0600)';
+COMMENT ON SCHEMA public IS 'CampusBite V1.0.0.010 (2026-11-01 22:59:31 -0600)';
 
 COMMIT;
 

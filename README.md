@@ -414,6 +414,19 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
 Reglas de registro: nombre de 2 a 80 caracteres, correo válido de máximo 120, contraseña de 8 a 72,
 matrícula de máximo 20 y teléfono de 10 a 15 dígitos (los dos últimos son opcionales).
 
+## Cifrado en tránsito (TLS)
+Todo lo que sale de la máquina va cifrado; sin cifrar solo se permite hacia `localhost` (desarrollo):
+
+| Tramo | Cómo se garantiza |
+|---|---|
+| Navegador → API | Redirección a https y **HSTS de un año** fuera de Development. En Azure activa también *HTTPS Only* en el App Service |
+| API → PostgreSQL | A una BD remota se conecta con `SSL Mode=Require` aunque la cadena no lo diga |
+| API → servidor de correo | STARTTLS obligatorio (o TLS directo en el puerto 465) |
+| Enlace del correo de verificación | `Correo__UrlVerificacion` debe ser `https://` (si no, no se envía) |
+| URLs de imágenes guardadas | Solo `https://` (la PWA bloquea imágenes http); `http://localhost` solo para Azurite |
+
+Las reglas están en `src/CampusBite.Infrastructure/Seguridad/Tls.cs`.
+
 ## Conexiones a la base de datos (local y producción)
 
 La API puede trabajar con dos bases. Las dos usan el rol `app_backend`, que solo ejecuta los procedimientos `sp_*`

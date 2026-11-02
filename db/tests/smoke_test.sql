@@ -617,6 +617,12 @@ BEGIN
   BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL mala', NULL, 10, true, 'ftp://x/y.png');
   EXCEPTION WHEN check_violation THEN v_ok := true; END;
   ASSERT v_ok, 'Una URL que no es http(s) debió rechazarse';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL http', NULL, 10, true, 'http://ejemplo.com/y.png');
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una URL http a un servidor remoto debió rechazarse (solo https)';
+  CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL Azurite', NULL, 10, true,
+                         'http://127.0.0.1:10000/devstoreaccount1/productos/x.png');
   RESET ROLE;
 
   ASSERT EXISTS (SELECT 1 FROM bitacora WHERE tabla = 'producto' AND id_registro = v_id::text

@@ -5,6 +5,7 @@ using CampusBite.Application.Productos;
 using CampusBite.Infrastructure.Auth;
 using CampusBite.Infrastructure.Blob;
 using CampusBite.Infrastructure.Correo;
+using CampusBite.Infrastructure.Seguridad;
 using CampusBite.Application.Common.Correo;
 using CampusBite.Infrastructure.Cafeterias;
 using CampusBite.Infrastructure.Persistence;
@@ -60,6 +61,8 @@ public static class DependencyInjection
                 "o en las variables de entorno (ver README, sección \"Conexiones a la base de datos\").");
         }
 
+        // JY-Sprint4 31/10/2026: a una BD remota solo se conecta con TLS
+        connectionString = Tls.ExigirSslEnBd(connectionString);
         var datos = new NpgsqlConnectionStringBuilder(connectionString);
         services.AddSingleton(new DatabaseInfo(nombre, datos.Host ?? "?", datos.Database ?? "?", datos.Username ?? "?"));
 

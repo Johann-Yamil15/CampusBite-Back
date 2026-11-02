@@ -1,8 +1,8 @@
 using System.Net;
 using CampusBite.Application.Common.Correo;
 using CampusBite.Domain.Common.Exceptions;
+using CampusBite.Infrastructure.Seguridad;
 using MailKit.Net.Smtp;
-using MailKit.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
@@ -33,6 +33,13 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
             throw new ServiceUnavailableException(MensajeNoDisponible);
         }
 
+        // El enlace es una credencial (activa la cuenta): nunca se manda por http salvo a un front en localhost
+        if (!Tls.EsUrlSegura(_opciones.UrlVerificacion))
+        {
+            _logger.LogError("Correo:UrlVerificacion debe empezar con https:// (solo localhost puede usar http).");
+            throw new ServiceUnavailableException(MensajeNoDisponible);
+        }
+
         var enlace = $"{_opciones.UrlVerificacion}?token={Uri.EscapeDataString(token)}";
         var mensaje = new MimeMessage
         {
@@ -46,8 +53,7 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
         try
         {
             using var cliente = new SmtpClient { Timeout = _opciones.TiempoLimiteSegundos * 1000 };
-            var seguridad = _opciones.Puerto == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTlsWhenAvailable;
-            await cliente.ConnectAsync(_opciones.Host, _opciones.Puerto, seguridad, cancellationToken);
+            await cliente.ConnectAsync(_opciones.Host, _opciones.Puerto, Tls.SeguridadSmtp(_opciones.Host, _opciones.Puerto), cancellationToken);
             if (!string.IsNullOrEmpty(_opciones.Usuario))
             {
                 await cliente.AuthenticateAsync(_opciones.Usuario, _opciones.Password, cancellationToken);

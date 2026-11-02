@@ -22,7 +22,7 @@ BEGIN
     RAISE EXCEPTION 'El precio debe ser mayor a 0, menor a 1,000,000 y con máximo 2 decimales' USING ERRCODE = 'check_violation';
   END IF;
   -- Misma regla que sp_actualizar_imagen_producto; http:// solo para el emulador local (Azurite)
-  IF p_imagen_url IS NOT NULL AND (p_imagen_url !~ '^https?://[^[:space:]]+$' OR length(p_imagen_url) > 255) THEN
+  IF p_imagen_url IS NOT NULL AND (p_imagen_url !~ '^(https://|http://(localhost|127\.0\.0\.1)[:/])[^[:space:]]+$' OR length(p_imagen_url) > 255) THEN
     RAISE EXCEPTION 'La URL de la imagen no es válida' USING ERRCODE = 'check_violation';
   END IF;
   IF p_id_categoria IS NOT NULL AND NOT EXISTS (
