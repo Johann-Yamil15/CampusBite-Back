@@ -387,6 +387,7 @@ DECLARE
   v_id      UUID;
   v_otro    UUID;
   v_json    JSONB;
+  v_total   INT;
   v_ok      BOOLEAN;
 BEGIN
   SET LOCAL ROLE app_backend;
@@ -447,14 +448,15 @@ BEGIN
   ASSERT v_json IS NULL, 'Una cafetería inactiva no debe verse para un alumno';
   CALL sp_obtener_cafeteria(v_id, c_sistema, v_json);
   ASSERT (v_json->>'activa')::boolean = false, 'admin_sistema sí ve la inactiva';
-  CALL sp_listar_cafeterias(c_alumno, false, v_json);
+  CALL sp_listar_cafeterias(c_alumno, false, NULL, 100, 0, v_total, v_json);
   ASSERT NOT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'La lista normal no trae inactivas';
   v_ok := false;
-  BEGIN CALL sp_listar_cafeterias(c_alumno, true, v_json);
+  BEGIN CALL sp_listar_cafeterias(c_alumno, true, NULL, 100, 0, v_total, v_json);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'Solo admin_sistema lista inactivas';
-  CALL sp_listar_cafeterias(c_sistema, true, v_json);
+  CALL sp_listar_cafeterias(c_sistema, true, NULL, 100, 0, v_total, v_json);
   ASSERT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'admin_sistema lista inactivas';
+  ASSERT v_total >= jsonb_array_length(v_json) AND v_total > 0, 'El total cuenta todas las que cumplen el filtro';
   CALL sp_cambiar_activa_cafeteria(v_id, true, c_sistema);
   CALL sp_obtener_cafeteria(v_id, c_alumno, v_json);
   ASSERT (v_json->>'activa')::boolean, 'Reactivada vuelve a verse';
@@ -717,7 +719,7 @@ BEGIN
   EXCEPTION WHEN no_data_found THEN v_ok := true; END;
   ASSERT v_ok, 'Un producto ya eliminado es "no existe"';
 
-  CALL sp_crear_orden(c_alumno, c_cafe, v_hora, 'tarjeta',
+  CALL sp_crear_orden(c_alumno, c_cafe, v_hora, 'efectivo',
     jsonb_build_array(jsonb_build_object('id_producto', v_pedido, 'cantidad', 1)), NULL, v_orden);
   v_ok := false;
   BEGIN CALL sp_eliminar_producto(v_pedido, c_admin, v_imagen);
