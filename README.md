@@ -66,7 +66,7 @@ de `America/Mexico_City`.
 | Tabla | Columnas principales | Notas |
 |---|---|---|
 | `rol` | `id_rol`, `nombre` | Catálogo: 1 `alumno`, 2 `admin_cafeteria`, 3 `admin_sistema` (enum `RolUsuario`) |
-| `usuario` | `id_usuario`, `id_rol`, `id_cafeteria`, `nombre`, `correo`, `contrasena_hash`, `matricula`, `telefono`, `activo`, `creado_en` | `correo` CITEXT único; `matricula` única; `id_cafeteria` solo para encargados (rol 2) |
+| `usuario` | `id_usuario`, `id_rol`, `id_cafeteria`, `nombre`, `correo`, `contrasena_hash`, `matricula`, `telefono`, `activo`, `correo_verificado`, `verificacion_hash`, `verificacion_expira`, `creado_en` | `correo` CITEXT único; `matricula` única; `id_cafeteria` solo para encargados (rol 2); sin `correo_verificado` no hay login |
 | `cafeteria` | `id_cafeteria`, `nombre`, `ubicacion`, `es_del_campus`, `punto_entrega`, `activa` | Sus encargados están en `usuario.id_cafeteria` |
 | `cafeteria_metodo_pago` | `id_cafeteria`, `metodo` | Un renglón por método aceptado (antes `acepta_*`) |
 | `horario_cafeteria` | `id_cafeteria`, `dia_semana` (1 = lunes … 7), `hora_apertura`, `hora_cierre` | |
@@ -91,7 +91,9 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | Llamada | Devuelve (OUT) | Qué hace |
 |---|---|---|
 | `CALL sp_registrar_usuario(nombre, correo, hash, matricula, telefono, NULL)` | `p_id_usuario` | Crea un alumno. Correo o matrícula repetidos → error `23505` |
-| `CALL sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo` | Para el login; todo `NULL` si el correo no existe |
+| `CALL sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo, p_correo_verificado` | Para el login; todo `NULL` si el correo no existe |
+| `CALL sp_generar_verificacion(correo, hash_token, expira, NULL)` | `p_nombre` | Guarda el hash del token de verificación; `NULL` si el correo no existe, está inactivo o ya está verificado |
+| `CALL sp_verificar_correo(hash_token, NULL, NULL, NULL)` | `p_id_usuario, p_correo, p_id_rol` | Marca el correo como verificado (token de un solo uso). Inválido, usado o vencido → `23514` |
 | `CALL sp_menu_cafeteria(id_cafeteria o NULL, NULL)` | `p_menu` (JSON) | Cafeterías activas con `metodos_pago` y `productos` |
 | `CALL sp_crear_orden(id_usuario, id_cafeteria, recogida_en, metodo, items, notas, NULL)` | `p_id_orden` | Orden + detalle + pago. `items`: `[{"id_producto":"<uuid>","cantidad":2}]`. Valida alumno activo, horario, recogida ≥ 5 min, método aceptado y productos. Efectivo queda `confirmada`; tarjeta o transferencia, `pendiente` |
 | `CALL sp_confirmar_pago(id_orden, referencia)` | — | Tarjeta o transferencia: pago `pagado` y orden `confirmada` |
@@ -320,11 +322,51 @@ Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato Pr
 |---|---|---|---|
 | `POST /api/auth/registro` | No | `nombre`, `correo`, `password`, `matricula?`, `telefono?` | 201 · 400 · 409 · 429 |
 | `POST /api/auth/registro-cafeteria` | No | `nombreEncargado`, `correo`, `password`, `telefono?`, `nombreCafeteria`, `ubicacion`, `esDelCampus`, `puntoEntrega`, `metodosPago` | 201 · 400 · 409 · 429 |
-| `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 429 |
+| `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 403 · 429 |
+| `POST /api/auth/verificar-correo` | No | `token` | 200 · 400 · 429 |
+| `POST /api/auth/reenviar-verificacion` | No | `correo` | 202 · 400 · 429 |
 | `GET /api/auth/me` | Bearer (cualquier rol) | — | 200 · 401 |
 
+**Verificación de correo** (alumno y vendedor). Registrarse ya **no inicia sesión**: llega un correo con un enlace
+y hasta abrirlo el login responde **403** "Verifica tu correo…".
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend
+    participant A as API
+    participant C as Correo del usuario
+    F->>A: POST /registro (o /registro-cafeteria)
+    A-->>C: correo con https://<front>/verificar-correo?token=...
+    A-->>F: 201 { correo, correoEnviado: true, mensaje }
+    C->>F: el usuario abre el enlace
+    F->>A: POST /verificar-correo { token }
+    A-->>F: 200 { usuarioId, rol, token, expiraEn }  (ya con sesión)
+```
+
+- El enlace **vence en 24 horas** y **sirve una sola vez**. Pedir otro (`/reenviar-verificacion`) anula el anterior.
+- En la BD solo se guarda el **SHA-256** del token; la bitácora no lo registra.
+- `/reenviar-verificacion` responde **202 siempre**, exista o no la cuenta, para no revelar qué correos están
+  registrados. El 403 del login solo sale si la contraseña es correcta.
+- Si el servidor de correo falla, la cuenta **sí se crea** y el registro responde `correoEnviado: false`: el front
+  debe ofrecer "Reenviar correo".
+- Las cuentas que ya existían antes de este cambio quedaron verificadas.
+- **El frontend necesita la página** `/verificar-correo` que lea `?token=` y llame a `POST /api/auth/verificar-correo`.
+  Su URL se configura en `Correo__UrlVerificacion`.
+
+Configuración (SMTP, cualquier proveedor):
+
+| Variable | Ejemplo |
+|---|---|
+| `Correo__Host` | `smtp.gmail.com` |
+| `Correo__Puerto` | `587` (STARTTLS) o `465` (TLS) |
+| `Correo__Usuario` / `Correo__Password` | Cuenta y contraseña de aplicación (no la contraseña normal) |
+| `Correo__Remitente` | `no-responder@tu-dominio` (vacío = el usuario) |
+| `Correo__UrlVerificacion` | `https://<front>/verificar-correo` |
+
+Para probar en local sin mandar correos reales sirve Mailtrap o smtp4dev.
+
 **Registro de negocio** (TEC-11): un dueño crea su cuenta y su cafetería en un solo paso. El usuario nace
-`AdminCafeteria` y encargado de esa cafetería, y recibe su token como en `/registro`. Todo ocurre en una transacción
+`AdminCafeteria` y encargado de esa cafetería, y recibe el correo de verificación como en `/registro`. Todo ocurre en una transacción
 (`sp_autorregistrar_cafeteria`): si el correo o el nombre de la cafetería ya existen (este sin distinguir
 mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nada creado a medias. Es distinto de
 `POST /api/cafeterias`, donde el `AdminSistema` da de alta una cafetería sin encargado.
@@ -336,7 +378,7 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
   "puntoEntrega": "Ventanilla 2", "metodosPago": ["Efectivo", "Tarjeta"] }
 ```
 
-**Registro**: crea siempre un `Alumno` y ya devuelve el token, así que el front puede entrar directo sin pedir login.
+**Registro**: crea siempre un `Alumno` y manda el correo de verificación (no devuelve token).
 
 ```json
 // POST /api/auth/registro
@@ -344,7 +386,14 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
   "matricula": "23300099", "telefono": "7711234567" }
 ```
 
-**Respuesta de registro (201) y login (200)**:
+**Respuesta de los dos registros (201)**:
+
+```json
+{ "correo": "ana@uttt.edu.mx", "correoEnviado": true,
+  "mensaje": "Te enviamos un correo para verificar tu cuenta. Abre el enlace para poder iniciar sesión." }
+```
+
+**Respuesta de login y de verificar-correo (200)**:
 
 ```json
 { "usuarioId": "1ffc232e-0d4d-4206-9362-87a949b4342a", "correo": "ana@uttt.edu.mx",
@@ -356,7 +405,9 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
 | Código | Cuándo | Qué mostrar en el front |
 |---|---|---|
 | 400 | Datos inválidos | El mensaje de cada campo en `errors` (ya vienen en español) |
+| 400 | Verificar correo: enlace inválido, ya usado o vencido | El `detail` y la opción de reenviar el correo |
 | 401 | Login: correo o contraseña incorrectos · `/me`: sin token o token vencido | Login: el `detail`. Ruta protegida: mandar al login |
+| 403 | Login: la contraseña es correcta pero falta verificar el correo | El `detail` y un botón "Reenviar correo" |
 | 409 | Correo o matrícula ya registrados | El `detail` |
 | 429 | Demasiados intentos desde la misma IP (20 por minuto por defecto) | El `detail`; el encabezado `Retry-After` indica los segundos de espera |
 

@@ -53,3 +53,6 @@
 031_sp_eliminar_categoria.sql
 # TEC-09 (Sprint 4): un producto por id (JY)
 032_sp_obtener_producto.sql
+# Verificación de correo al registrarse (JY, Sprint 4)
+033_sp_generar_verificacion.sql
+034_sp_verificar_correo.sql

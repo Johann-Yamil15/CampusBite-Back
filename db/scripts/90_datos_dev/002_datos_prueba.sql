@@ -19,6 +19,12 @@ INSERT INTO usuario (id_usuario, id_rol, id_cafeteria, nombre, correo, contrasen
   ('00000000-0000-0000-0000-0000000000a3', 3, NULL, 'Admin Sistema',       'admin@ejemplo.test',     'HASH_DE_PRUEBA_NO_VALIDO', NULL,         NULL)
 ON CONFLICT (id_usuario) DO NOTHING;
 
+-- JY-Sprint4 31/10/2026: los usuarios de prueba no pasan por el correo de verificación
+UPDATE usuario SET correo_verificado = true
+ WHERE id_usuario IN ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2',
+                      '00000000-0000-0000-0000-0000000000a3')
+   AND NOT correo_verificado;
+
 -- Lunes a domingo, 07:00-20:00, para poder probar órdenes cualquier día
 INSERT INTO horario_cafeteria (id_cafeteria, dia_semana, hora_apertura, hora_cierre)
 SELECT '00000000-0000-0000-0000-0000000000c1', d, '07:00', '20:00' FROM generate_series(1, 7) d

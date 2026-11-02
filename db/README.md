@@ -78,7 +78,9 @@ valores. Las listas llegan como `JSONB`. Ejemplo en .NET: `src/CampusBite.Infras
 | Procedimiento | Devuelve (OUT) | Qué hace |
 |---|---|---|
 | `sp_registrar_usuario(nombre, correo, hash, matricula, telefono, NULL)` | `p_id_usuario` | Crea un alumno. Correo o matrícula repetidos → `23505` |
-| `sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo` | Para el login. Todo `NULL` si el correo no existe |
+| `sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo, p_correo_verificado` | Para el login. Todo `NULL` si el correo no existe |
+| `sp_generar_verificacion(correo, hash_token, expira, NULL)` | `p_nombre` | Sprint 4. Guarda el hash del token de verificación de correo; `NULL` si no corresponde (no existe, inactivo o ya verificado) |
+| `sp_verificar_correo(hash_token, NULL, NULL, NULL)` | `p_id_usuario, p_correo, p_id_rol` | Sprint 4. Verifica el correo con un token de un solo uso; inválido, usado o vencido → `23514` |
 | `sp_menu_cafeteria(id_cafeteria \| NULL, NULL)` | `p_menu` (JSON) | Cafeterías activas con `metodos_pago` y `productos` |
 | `sp_crear_orden(id_usuario, id_cafeteria, recogida_en, metodo, items, notas, NULL)` | `p_id_orden` | Orden + detalle + pago. `items`: `[{"id_producto":"<uuid>","cantidad":2}]`. Valida alumno, horario, recogida ≥ 5 min, método aceptado, productos. Efectivo nace `confirmada`; tarjeta o transferencia, `pendiente` |
 | `sp_confirmar_pago(id_orden, referencia)` | — | Tarjeta o transferencia: pago `pagado` y orden `confirmada` |

@@ -4,6 +4,8 @@ using CampusBite.Application.Common.Security;
 using CampusBite.Application.Productos;
 using CampusBite.Infrastructure.Auth;
 using CampusBite.Infrastructure.Blob;
+using CampusBite.Infrastructure.Correo;
+using CampusBite.Application.Common.Correo;
 using CampusBite.Infrastructure.Cafeterias;
 using CampusBite.Infrastructure.Persistence;
 using CampusBite.Infrastructure.Productos;
@@ -35,6 +37,10 @@ public static class DependencyInjection
         // es seguro entre hilos y reutiliza sus conexiones
         services.Configure<AzureBlobSettings>(configuration.GetSection(AzureBlobSettings.SectionName));
         services.AddSingleton<IBlobService, AzureBlobService>();
+
+        // JY-Sprint4 31/10/2026: correos de verificación por SMTP (MailKit)
+        services.Configure<CorreoSettings>(configuration.GetSection(CorreoSettings.SectionName));
+        services.AddSingleton<IEnviadorCorreo, SmtpEnviadorCorreo>();
 
         return services;
     }
