@@ -1,5 +1,6 @@
 using CampusBite.Application.Auth;
 using CampusBite.Application.Cafeterias;
+using CampusBite.Application.Productos;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CampusBite.Application;
@@ -14,6 +15,9 @@ public static class DependencyInjection
 
         // Cafeterías (TEC-08)
         services.AddScoped<ICafeteriaService, CafeteriaService>();
+
+        // Productos: alta (TEC-09) e imagen (TEC-10)
+        services.AddScoped<IProductoService, ProductoService>();
 
         return services;
     }

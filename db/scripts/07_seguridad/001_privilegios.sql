@@ -30,9 +30,20 @@ GRANT EXECUTE ON PROCEDURE
   sp_actualizar_cafeteria,
   sp_cambiar_activa_cafeteria,
   sp_restablecer_password,
-  sp_autorregistrar_cafeteria
+  sp_autorregistrar_cafeteria,
+  sp_actualizar_imagen_producto,
+  sp_crear_producto,
+  sp_listar_productos_cafeteria,
+  sp_listar_categorias,
+  sp_actualizar_producto,
+  sp_toggle_disponible_producto,
+  sp_eliminar_producto,
+  sp_crear_categoria,
+  sp_eliminar_categoria,
+  sp_obtener_producto
 TO app_backend;
--- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria.
+-- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria,
+-- sp_validar_datos_producto.
 
 -- Nadie entra a la base sin permiso explícito. Si quien ejecuta no es dueño de la base, solo se avisa.
 DO $$
