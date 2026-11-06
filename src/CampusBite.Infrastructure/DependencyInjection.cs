@@ -1,9 +1,12 @@
 using CampusBite.Application.Auth;
 using CampusBite.Application.Cafeterias;
 using CampusBite.Application.Common.Security;
+using CampusBite.Application.Productos;
 using CampusBite.Infrastructure.Auth;
+using CampusBite.Infrastructure.Blob;
 using CampusBite.Infrastructure.Cafeterias;
 using CampusBite.Infrastructure.Persistence;
+using CampusBite.Infrastructure.Productos;
 using CampusBite.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -26,6 +29,12 @@ public static class DependencyInjection
         // Repositorios por módulo
         services.AddScoped<IUsuarioRepository, UsuarioRepository>();
         services.AddScoped<ICafeteriaRepository, CafeteriaRepository>();
+        services.AddScoped<IProductoRepository, ProductoRepository>();
+
+        // JY-Sprint4 27/10/2026: TEC-10, imágenes de productos en Azure Blob Storage. Singleton: el cliente de Azure
+        // es seguro entre hilos y reutiliza sus conexiones
+        services.Configure<AzureBlobSettings>(configuration.GetSection(AzureBlobSettings.SectionName));
+        services.AddSingleton<IBlobService, AzureBlobService>();
 
         return services;
     }

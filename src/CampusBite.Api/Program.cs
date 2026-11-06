@@ -1,4 +1,5 @@
 using CampusBite.Api.Common.Extensions;
+using CampusBite.Api.Common.Filters;
 using CampusBite.Api.Common.Middleware;
 using CampusBite.Api.Common.Settings;
 using CampusBite.Application;
@@ -6,6 +7,7 @@ using CampusBite.Infrastructure;
 using CampusBite.Infrastructure.Persistence;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 // FB-Sprint1 02/10/2026: carga el archivo .env (si existe) sin sobrescribir variables de entorno reales
 DotNetEnv.Env.NoClobber().TraversePath().Load();
@@ -21,7 +23,13 @@ if (!string.IsNullOrEmpty(port))
 
 // JJ-Sprint2 09/10/2026: errores de validación (400) con título en español y el mismo formato ProblemDetails
 // JY-Sprint3 20/10/2026: los enums viajan como texto ("Efectivo"), no como número; no se aceptan números
-builder.Services.AddControllers()
+// JY-Sprint4 27/10/2026: TEC-09, los formularios (multipart) se leen en cultura invariante: "55.50" es 55.50 siempre
+builder.Services.AddControllers(options =>
+    {
+        var indice = options.ValueProviderFactories.IndexOf(
+            options.ValueProviderFactories.OfType<FormValueProviderFactory>().Single());
+        options.ValueProviderFactories[indice] = new FormularioInvarianteValueProviderFactory();
+    })
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false)))
     .ConfigureApiBehaviorOptions(options =>
 {
@@ -47,6 +55,7 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddCorsPolicy(builder.Configuration);
 builder.Services.AddSwaggerDocumentation();
 builder.Services.AddAuthRateLimiting(builder.Configuration);
+builder.Services.AddSubidaDeArchivos();
 
 var app = builder.Build();
 
@@ -85,6 +94,9 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// JY-Sprint4 27/10/2026: TEC-10, tiempo máximo de las subidas de archivos (solo donde la acción lo pide)
+app.UseRequestTimeouts();
 
 app.MapControllers();
 

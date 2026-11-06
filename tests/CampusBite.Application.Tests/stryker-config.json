@@ -1,0 +1,8 @@
+{
+  "stryker-config": {
+    "project": "CampusBite.Application.csproj",
+    "mutate": [ "**/Productos/**/*.cs" ],
+    "reporters": [ "html", "progress" ],
+    "thresholds": { "high": 90, "low": 80, "break": 80 }
+  }
+}

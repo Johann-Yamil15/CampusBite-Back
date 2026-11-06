@@ -8,17 +8,21 @@ public static class ProblemaHttp
 {
     public static Task EscribirAsync(HttpContext context, int statusCode, string detail)
     {
-        var problem = new ProblemDetails
-        {
-            Status = statusCode,
-            Title = ReasonPhrase(statusCode),
-            Detail = detail,
-            Instance = context.Request.Path
-        };
-
         context.Response.StatusCode = statusCode;
-        return context.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json");
+        return context.Response.WriteAsJsonAsync(Crear(context, statusCode, detail), options: null, contentType: "application/problem+json");
     }
+
+    // JY-Sprint4 27/10/2026: TEC-10, para los filtros de MVC que responden con un IActionResult en vez de escribir
+    public static ObjectResult Resultado(HttpContext context, int statusCode, string detail) =>
+        new(Crear(context, statusCode, detail)) { StatusCode = statusCode, ContentTypes = { "application/problem+json" } };
+
+    private static ProblemDetails Crear(HttpContext context, int statusCode, string detail) => new()
+    {
+        Status = statusCode,
+        Title = ReasonPhrase(statusCode),
+        Detail = detail,
+        Instance = context.Request.Path
+    };
 
     // Mantiene los mismos títulos que ya recibe el front (p. ej. "Conflict", "Unauthorized")
     private static string ReasonPhrase(int statusCode) => statusCode switch
@@ -28,6 +32,9 @@ public static class ProblemaHttp
         StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "NotFound",
         StatusCodes.Status409Conflict => "Conflict",
+        StatusCodes.Status413PayloadTooLarge => "PayloadTooLarge",
+        StatusCodes.Status503ServiceUnavailable => "ServiceUnavailable",
+        StatusCodes.Status504GatewayTimeout => "GatewayTimeout",
         _ => "InternalServerError"
     };
 }

@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- JJ-Sprint2 09/10/2026: detalles técnicos que implementan las interfaces de Application:
-       PostgreSQL (EF Core + Npgsql), BCrypt y generación de JWT. -->
+       PostgreSQL (EF Core + Npgsql), BCrypt y generación de JWT.
+       JY-Sprint4 27/10/2026: TEC-10, Azure Blob Storage para las imágenes de productos. -->
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="EFCore.NamingConventions" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.9" />
