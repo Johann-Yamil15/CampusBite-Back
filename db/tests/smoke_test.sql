@@ -823,5 +823,36 @@ BEGIN
   RAISE NOTICE 'OK 27: verificación de correo con token de un solo uso, reemplazable, con vencimiento y sin revelar correos';
 END $$;
 
+-- 28. Sin duplicados en los POST (JY, Sprint 4) -------------------------------------
+-- JY-Sprint4 05/11/2026: los índices únicos sin distinguir mayúsculas existen (si una base tenía repetidos, el script
+-- solo avisa y no los crea: aquí se detecta) y categorías y matrículas ya no aceptan "Bebidas" = " bebidas ".
+DO $$
+DECLARE
+  c_admin  UUID := '00000000-0000-0000-0000-0000000000a2';     -- encargado de c1
+  c_cafe   UUID := '00000000-0000-0000-0000-0000000000c1';
+  v_id     UUID;
+  v_ok     BOOLEAN;
+BEGIN
+  ASSERT (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
+           ('ux_cafeteria_nombre', 'ux_producto_nombre', 'ux_categoria_nombre', 'ux_usuario_matricula')) = 4,
+         'Faltan índices únicos (cafetería, producto, categoría o matrícula): revisa los avisos al aplicar el script';
+
+  SET LOCAL ROLE app_backend;
+  CALL sp_crear_categoria(c_cafe, c_admin, 'Postres Fríos', v_id);
+  v_ok := false;
+  BEGIN CALL sp_crear_categoria(c_cafe, c_admin, '  postres fríos ', v_id);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una categoría repetida (sin distinguir mayúsculas ni espacios) debió rechazarse';
+
+  CALL sp_registrar_usuario('Mat Uno', 'mat1@ejemplo.test', 'HASH', 'UTT7777', NULL, v_id);
+  v_ok := false;
+  BEGIN CALL sp_registrar_usuario('Mat Dos', 'mat2@ejemplo.test', 'HASH', ' utt7777 ', NULL, v_id);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una matrícula repetida (sin distinguir mayúsculas) debió rechazarse';
+  RESET ROLE;
+
+  RAISE NOTICE 'OK 28: los POST no aceptan duplicados por mayúsculas o espacios (categorías y matrículas) y los índices únicos existen';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 27 de 27 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 28 de 28 OK (transacción revertida)'

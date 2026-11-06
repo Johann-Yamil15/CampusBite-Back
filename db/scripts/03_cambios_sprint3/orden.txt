@@ -2,3 +2,4 @@
 001_cafeteria_nombre_unico.sql
 002_producto_nombre_unico.sql
 003_verificacion_correo.sql
+004_categoria_matricula_unicas.sql

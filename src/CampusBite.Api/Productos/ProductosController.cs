@@ -1,5 +1,6 @@
 using CampusBite.Api.Common.Filters;
 using CampusBite.Api.Common.Security;
+using CampusBite.Application.Common;
 using CampusBite.Application.Productos;
 using CampusBite.Application.Productos.Dtos;
 using Microsoft.AspNetCore.Authorization;
@@ -31,11 +32,14 @@ public class ProductosController : ControllerBase
     // JJ-Sprint4 27/10/2026: TEC-09. Lista todos los productos (disponibles e inactivos) para el panel admin
     [HttpGet]
     [Authorize(Policy = PoliticasAutorizacion.PersonalCafeteria)]
-    [ProducesResponseType<IReadOnlyList<ProductoDto>>(StatusCodes.Status200OK)]
+    // JY-Sprint4 05/11/2026: paginado (?pagina=1&tamanoPagina=20&buscar=texto&idCategoria=...), máximo 100 por página
+    [ProducesResponseType<PaginaDto<ProductoDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<IReadOnlyList<ProductoDto>>> Listar(Guid idCafeteria, CancellationToken cancellationToken)
-        => Ok(await _productos.ListarAsync(idCafeteria, cancellationToken));
+    public async Task<ActionResult<PaginaDto<ProductoDto>>> Listar(
+        Guid idCafeteria, [FromQuery] ConsultaProductosDto consulta, CancellationToken cancellationToken)
+        => Ok(await _productos.ListarAsync(idCafeteria, consulta, cancellationToken));
 
     // JJ-Sprint4 27/10/2026: TEC-09. Actualiza nombre, precio, categoría y disponibilidad. La imagen se gestiona por POST .../imagen
     [HttpPut("{idProducto:guid}")]

@@ -110,7 +110,7 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | Baja lógica o reactivación. Solo `admin_sistema`. Con órdenes en curso → `55006` |
 | `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url)` | — | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
 | `CALL sp_obtener_producto(id_cafeteria, id_producto, id_actor, NULL)` | `p_producto` (JSON o `NULL`) | Un producto con el nombre de su categoría; `NULL` si no existe, es de otra cafetería, o no está disponible / su cafetería está inactiva y el actor no la administra |
-| `CALL sp_listar_productos_cafeteria(id_cafeteria, id_actor, NULL)` | `p_productos` (JSON) | Todos los productos (disponibles o no) por categoría y nombre. Su encargado o `admin_sistema` |
+| `CALL sp_listar_productos_cafeteria(id_cafeteria, id_actor, buscar, id_categoria, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_productos` (JSON) | Una página de productos (disponibles o no) por categoría y nombre (máximo 100) y el total que cumple el filtro. Su encargado o `admin_sistema` |
 | `CALL sp_actualizar_producto(id_producto, id_actor, id_categoria, nombre, descripcion, precio, disponible)` | — | Edita un producto (no la imagen). Nombre repetido → `23505` |
 | `CALL sp_toggle_disponible_producto(id_producto, disponible, id_actor)` | — | Solo cambia la disponibilidad |
 | `CALL sp_eliminar_producto(id_producto, id_actor, NULL)` | `p_imagen_url` (o `NULL`) | Borra el producto y devuelve su imagen para borrar el blob. Si aparece en alguna orden (activa o terminada) → `55006` |
@@ -191,12 +191,21 @@ Reglas:
 Base: `/api/cafeterias`. Todas piden sesión. "Eliminar" es una **baja lógica**: la cafetería deja de aparecer y de
 aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se puede reactivar.
 
-**El listado es paginado** para que la PWA no descargue miles de cafeterías de golpe. Ordena por nombre y responde:
+**El listado es paginado** para que la PWA no descargue miles de cafeterías de golpe. Ordena por nombre. Todos los
+listados paginados de la API (cafeterías y productos) responden igual:
 
 ```json
 { "items": [ { "idCafeteria": "…", "nombre": "…", "metodosPago": ["Efectivo"], … } ],
-  "total": 1534, "pagina": 1, "tamanoPagina": 20 }
+  "total": 1534, "pagina": 1, "tamanoPagina": 20,
+  "totalPaginas": 77, "tieneAnterior": false, "tieneSiguiente": true }
 ```
+
+Reglas comunes de la paginación:
+- `total` cuenta **todos** los que cumplen el filtro; `totalPaginas`, `tieneAnterior` y `tieneSiguiente` sirven para
+  los botones o el scroll infinito (pedir la siguiente página mientras `tieneSiguiente` sea `true`).
+- El orden es estable (siempre desempata por id), así que pasar de página no repite ni salta registros.
+- Parámetros inválidos (`pagina=0`, `tamanoPagina=101`, texto donde va un número) → **400** con el campo en `errors`.
+- En la búsqueda, `%` y `_` se buscan como texto, no como comodines.
 
 | Parámetro | Por defecto | Regla |
 |---|---|---|
@@ -205,8 +214,7 @@ aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se pued
 | `buscar` | — | Parte del nombre, sin distinguir mayúsculas (máx. 100 caracteres) |
 | `incluirInactivas` | `false` | Solo `AdminSistema` |
 
-Número de páginas: `ceil(total / tamanoPagina)`. Probado con 2000 cafeterías: unos 4 ms por página en la BD
-(`db/tests/carga_cafeterias.sql`).
+Probado con 2000 cafeterías: unos 4 a 8 ms por página en la BD (`db/tests/carga_cafeterias.sql`).
 
 | Método y ruta | Quién | Cuerpo | Respuestas |
 |---|---|---|---|
@@ -276,13 +284,31 @@ Resto del CRUD (base `/api/cafeterias/{idCafeteria}`; todo menos `GET .../catego
 
 | Método y ruta | Qué hace | Respuestas |
 |---|---|---|
-| `GET /productos` | Todos los productos de la cafetería, disponibles o no (panel del encargado) | 200, 403 |
+| `GET /productos?pagina=1&tamanoPagina=20&buscar=&idCategoria=` | Productos de la cafetería, disponibles o no (panel del encargado), **paginados** por categoría y nombre. `idCategoria` filtra por categoría (antes el panel podía filtrar en el navegador porque recibía todos) | 200, 400, 403 |
 | `PUT /productos/{idProducto}` | Edita nombre, descripción, precio, categoría y disponibilidad (JSON, mismas reglas que el alta). La imagen se cambia con `POST .../imagen` | 204, 400, 403, 404, 409 |
 | `PATCH /productos/{idProducto}/disponible` | Cuerpo `true` o `false` | 204, 403, 404 |
 | `DELETE /productos/{idProducto}` | Lo borra y también su imagen en Azure. **409** si aparece en alguna orden (activa o en el historial): en ese caso se desactiva | 204, 403, 404, 409 |
 | `GET /categorias` | Categorías de la cafetería (cualquier usuario con sesión) | 200 |
 | `POST /categorias` | `{ "nombre": "Bebidas" }`, 2 a 60 caracteres, único en la cafetería | 201, 400, 403, 409 |
 | `DELETE /categorias/{idCategoria}` | Sus productos quedan sin categoría | 204, 403, 404 |
+
+**Sin duplicados en los POST.** Lo garantiza la BD con índices únicos, así que también protege cuando el celular
+repite la petición por mala señal (la segunda responde **409** con el mensaje para el usuario):
+
+| Qué | Único | Se considera igual |
+|---|---|---|
+| Correo de usuario | En todo el sistema | Sin distinguir mayúsculas (`CITEXT`) |
+| Matrícula | En todo el sistema | Sin distinguir mayúsculas ni espacios de los extremos |
+| Nombre de cafetería | En todo el sistema | Sin distinguir mayúsculas ni espacios de los extremos |
+| Nombre de producto | En su cafetería | Sin distinguir mayúsculas ni espacios de los extremos |
+| Nombre de categoría | En su cafetería | Sin distinguir mayúsculas ni espacios de los extremos |
+| Métodos de pago de una cafetería | — | Los repetidos se ignoran |
+
+Si al aplicar un script de BD sale el aviso "repetidos: no se creó ux_…", la base tiene duplicados viejos: hay que
+corregirlos y volver a aplicar el script (el smoke test falla mientras falte un índice).
+
+Para probar con muchos datos en un ambiente real: `db/tests/cargar_productos_api.py` crea N productos de prueba en una
+cafetería por la API (y con `--eliminar` los borra).
 
 ## Imagen de producto (TEC-10)
 `POST /api/cafeterias/{idCafeteria}/productos/{idProducto}/imagen` · `multipart/form-data` con el campo `archivo`.
