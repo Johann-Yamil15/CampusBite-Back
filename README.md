@@ -415,7 +415,8 @@ Reglas de registro: nombre de 2 a 80 caracteres, correo válido de máximo 120, 
 matrícula de máximo 20 y teléfono de 10 a 15 dígitos (los dos últimos son opcionales).
 
 ## Cifrado en tránsito (TLS)
-Todo lo que sale de la máquina va cifrado; sin cifrar solo se permite hacia `localhost` (desarrollo):
+Todo lo que sale a internet va cifrado; sin cifrar solo se permite dentro de la red local de desarrollo (`localhost`,
+IPs privadas de Docker/WSL y nombres sin punto como `postgres` en docker-compose):
 
 | Tramo | Cómo se garantiza |
 |---|---|
@@ -423,7 +424,7 @@ Todo lo que sale de la máquina va cifrado; sin cifrar solo se permite hacia `lo
 | API → PostgreSQL | A una BD remota se conecta con `SSL Mode=Require` aunque la cadena no lo diga |
 | API → servidor de correo | STARTTLS obligatorio (o TLS directo en el puerto 465) |
 | Enlace del correo de verificación | `Correo__UrlVerificacion` debe ser `https://` (si no, no se envía) |
-| URLs de imágenes guardadas | Solo `https://` (la PWA bloquea imágenes http); `http://localhost` solo para Azurite |
+| URLs de imágenes guardadas | Solo `https://` (la PWA bloquea imágenes http); `http://localhost` o `127.0.0.1` solo para Azurite |
 
 Las reglas están en `src/CampusBite.Infrastructure/Seguridad/Tls.cs`.
 

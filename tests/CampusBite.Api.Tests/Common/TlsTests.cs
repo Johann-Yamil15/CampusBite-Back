@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace CampusBite.Api.Tests.Common;
 
-// JY-Sprint4 31/10/2026: reglas de TLS (todo cifrado salvo hacia localhost)
+// JY-Sprint4 31/10/2026: reglas de TLS (todo cifrado salvo dentro de la red local de desarrollo)
 public class TlsTests
 {
     [Theory]
@@ -12,10 +12,18 @@ public class TlsTests
     [InlineData("LOCALHOST", true)]
     [InlineData("127.0.0.1", true)]
     [InlineData("::1", true)]
+    [InlineData("127.0.0.2", true)]
+    [InlineData("172.29.52.229", true)]                                   // WSL / Podman
+    [InlineData("192.168.1.20", true)]
+    [InlineData("10.0.0.5", true)]
+    [InlineData("postgres", true)]                                        // servicio de docker-compose
     [InlineData("ep-algo.neon.tech", false)]
-    [InlineData("127.0.0.2", false)]
+    [InlineData("smtp.gmail.com", false)]
+    [InlineData("172.32.0.1", false)]                                     // fuera del rango privado
+    [InlineData("8.8.8.8", false)]
+    [InlineData("", false)]
     [InlineData(null, false)]
-    public void EsLocal_solo_reconoce_la_propia_maquina(string? host, bool esperado)
+    public void EsLocal_solo_reconoce_la_red_local_de_desarrollo(string? host, bool esperado)
     {
         Assert.Equal(esperado, Tls.EsLocal(host));
     }
