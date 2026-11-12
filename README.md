@@ -101,7 +101,7 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero; máximo 100 por página |
 | `CALL sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo el encargado o `admin_sistema` (error `42501` si no) |
 | `CALL sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro (qué cambió, quién y cuándo). Solo `admin_sistema` |
-| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | Cafeterías por nombre; las inactivas solo `admin_sistema` |
+| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, buscar, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_cafeterias` (JSON) | Una página de cafeterías por nombre (máximo 100) y el total que cumple el filtro; las inactivas solo `admin_sistema` |
 | `CALL sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | Una cafetería; `NULL` si no existe o es inactiva y el actor no la administra |
 | `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
 | `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
@@ -189,10 +189,27 @@ Reglas:
 Base: `/api/cafeterias`. Todas piden sesión. "Eliminar" es una **baja lógica**: la cafetería deja de aparecer y de
 aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se puede reactivar.
 
+**El listado es paginado** para que la PWA no descargue miles de cafeterías de golpe. Ordena por nombre y responde:
+
+```json
+{ "items": [ { "idCafeteria": "…", "nombre": "…", "metodosPago": ["Efectivo"], … } ],
+  "total": 1534, "pagina": 1, "tamanoPagina": 20 }
+```
+
+| Parámetro | Por defecto | Regla |
+|---|---|---|
+| `pagina` | 1 | Desde 1. Una página después de la última devuelve `items` vacío con el `total` real |
+| `tamanoPagina` | 20 | De 1 a 100 |
+| `buscar` | — | Parte del nombre, sin distinguir mayúsculas (máx. 100 caracteres) |
+| `incluirInactivas` | `false` | Solo `AdminSistema` |
+
+Número de páginas: `ceil(total / tamanoPagina)`. Probado con 2000 cafeterías: unos 4 ms por página en la BD
+(`db/tests/carga_cafeterias.sql`).
+
 | Método y ruta | Quién | Cuerpo | Respuestas |
 |---|---|---|---|
-| `GET /api/cafeterias` | Cualquier rol (solo activas) | — | 200 · 401 |
-| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 401 · 403 |
+| `GET /api/cafeterias?pagina=1&tamanoPagina=20&buscar=` | Cualquier rol (solo activas) | — | 200 · 400 · 401 |
+| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 400 · 401 · 403 |
 | `GET /api/cafeterias/{id}` | Cualquier rol; una inactiva solo su encargado y `AdminSistema` (los demás reciben 404) | — | 200 · 401 · 404 |
 | `POST /api/cafeterias` | `AdminSistema` | `GuardarCafeteriaDto` | 201 (+ `Location`) · 400 · 401 · 403 · 409 |
 | `PUT /api/cafeterias/{id}` | Su encargado (`AdminCafeteria` de **esa** cafetería) o `AdminSistema` | `GuardarCafeteriaDto` | 200 · 400 · 401 · 403 · 404 · 409 |

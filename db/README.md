@@ -88,7 +88,7 @@ valores. Las listas llegan como `JSONB`. Ejemplo en .NET: `src/CampusBite.Infras
 | `sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero, máximo 100 por página |
 | `sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo su encargado o `admin_sistema` (`42501` si no) |
 | `sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro, el más reciente primero. Solo `admin_sistema` |
-| `sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | TEC-08. Por nombre; las inactivas solo `admin_sistema` |
+| `sp_listar_cafeterias(id_actor, incluir_inactivas, buscar, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_cafeterias` (JSON) | TEC-08. Paginado por nombre (máx. 100), con búsqueda y total; las inactivas solo `admin_sistema` |
 | `sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | TEC-08. `NULL` si no existe o es inactiva y el actor no la administra |
 | `sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | TEC-08. Solo `admin_sistema`. Nombre repetido (sin distinguir mayúsculas) → `23505` |
 | `sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | TEC-08. Su encargado o `admin_sistema`; reemplaza los métodos de pago |
