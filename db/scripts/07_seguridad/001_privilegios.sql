@@ -40,7 +40,9 @@ GRANT EXECUTE ON PROCEDURE
   sp_eliminar_producto,
   sp_crear_categoria,
   sp_eliminar_categoria,
-  sp_obtener_producto
+  sp_obtener_producto,
+  sp_generar_verificacion,
+  sp_verificar_correo
 TO app_backend;
 -- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria,
 -- sp_validar_datos_producto.

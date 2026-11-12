@@ -9,4 +9,7 @@ public class CredencialesUsuario
     public RolUsuario IdRol { get; set; }
     public string ContrasenaHash { get; set; } = string.Empty;
     public bool Activo { get; set; }
+
+    // JY-Sprint4 31/10/2026: sin verificar no puede iniciar sesión
+    public bool CorreoVerificado { get; set; }
 }

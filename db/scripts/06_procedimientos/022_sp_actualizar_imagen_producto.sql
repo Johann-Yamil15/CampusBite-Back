@@ -13,8 +13,9 @@ CREATE OR REPLACE PROCEDURE sp_actualizar_imagen_producto(
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-  -- http:// solo para el emulador local (Azurite); en Azure siempre es https://
-  IF p_imagen_url IS NULL OR p_imagen_url !~ '^https?://[^[:space:]]+$' OR length(p_imagen_url) > 255 THEN
+  -- JY-Sprint4 31/10/2026: https:// obligatorio (la PWA bloquea imágenes http); http:// solo hacia localhost
+  -- para el emulador local (Azurite)
+  IF p_imagen_url IS NULL OR p_imagen_url !~ '^(https://|http://(localhost|127\.0\.0\.1)[:/])[^[:space:]]+$' OR length(p_imagen_url) > 255 THEN
     RAISE EXCEPTION 'La URL de la imagen no es válida' USING ERRCODE = 'check_violation';
   END IF;
 
