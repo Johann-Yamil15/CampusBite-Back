@@ -46,9 +46,9 @@ public class UsuarioRepository : IUsuarioRepository
 
     public Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default)
     {
-        // Si el correo no existe, los cuatro OUT regresan NULL
+        // Si el correo no existe, todos los OUT regresan NULL
         return _context.EjecutarAsync(
-            "CALL sp_obtener_credenciales(@correo, NULL, NULL, NULL, NULL)",
+            "CALL sp_obtener_credenciales(@correo, NULL, NULL, NULL, NULL, NULL)",
             [Texto("correo", correo)],
             fila => fila.IsDBNull(0)
                 ? null
@@ -57,10 +57,28 @@ public class UsuarioRepository : IUsuarioRepository
                     IdUsuario = fila.GetGuid(0),
                     IdRol = (RolUsuario)fila.GetInt16(1),
                     ContrasenaHash = fila.GetString(2),
-                    Activo = fila.GetBoolean(3)
+                    Activo = fila.GetBoolean(3),
+                    CorreoVerificado = fila.GetBoolean(4)
                 },
             cancellationToken);
     }
+
+    // JY-Sprint4 31/10/2026: verificación de correo
+    public Task<string?> GenerarVerificacionAsync(
+        string correo, string tokenHash, DateTimeOffset expira, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync<string?>(
+            "CALL sp_generar_verificacion(@correo, @hash, @expira, NULL)",
+            [Texto("correo", correo), Texto("hash", tokenHash), new("expira", NpgsqlTypes.NpgsqlDbType.TimestampTz) { Value = expira }],
+            fila => fila.IsDBNull(0) ? null : fila.GetString(0),
+            cancellationToken);
+
+    public Task<(Guid IdUsuario, string Correo, RolUsuario Rol)> VerificarCorreoAsync(
+        string tokenHash, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_verificar_correo(@hash, NULL, NULL, NULL)",
+            [Texto("hash", tokenHash)],
+            fila => (fila.GetGuid(0), fila.GetString(1), (RolUsuario)fila.GetInt16(2)),
+            cancellationToken);
 
     // JJ-Sprint3 21/10/2026: TEC-12
     public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default) =>

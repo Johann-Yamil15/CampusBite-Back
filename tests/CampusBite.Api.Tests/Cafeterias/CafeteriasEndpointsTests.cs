@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using CampusBite.Api.Tests.Seguridad;
 using CampusBite.Application.Cafeterias;
 using CampusBite.Application.Cafeterias.Dtos;
+using CampusBite.Application.Common;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Cafeterias;
 using CampusBite.Domain.Common.Exceptions;
@@ -85,6 +86,50 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
         var respuesta = await _api.CreateClient().GetAsync("/api/cafeterias");
 
         Assert.Equal(HttpStatusCode.Unauthorized, respuesta.StatusCode);
+    }
+
+    // JY-Sprint4 31/10/2026: listado paginado
+    [Fact]
+    public async Task Listar_responde_la_pagina_con_items_y_total()
+    {
+        var respuesta = await Cliente(RolUsuario.Alumno).GetAsync("/api/cafeterias?pagina=3&tamanoPagina=50&buscar=central");
+
+        Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
+        var cuerpo = (await respuesta.Content.ReadFromJsonAsync<JsonObject>())!;
+        Assert.Equal((1534, 3, 50), (cuerpo["total"]!.GetValue<int>(), cuerpo["pagina"]!.GetValue<int>(), cuerpo["tamanoPagina"]!.GetValue<int>()));
+        Assert.Equal((31, true, true), (cuerpo["totalPaginas"]!.GetValue<int>(), cuerpo["tieneAnterior"]!.GetValue<bool>(), cuerpo["tieneSiguiente"]!.GetValue<bool>()));
+        Assert.Equal("Cafetería Central", cuerpo["items"]![0]!["nombre"]!.GetValue<string>());
+        Assert.Equal("central", _servicio.UltimaConsulta!.Buscar);
+    }
+
+    [Fact]
+    public async Task Listar_sin_parametros_pide_la_primera_pagina_de_20()
+    {
+        await Cliente(RolUsuario.Alumno).GetAsync("/api/cafeterias");
+
+        Assert.Equal((1, 20, false), (_servicio.UltimaConsulta!.Pagina, _servicio.UltimaConsulta.TamanoPagina, _servicio.UltimaConsulta.IncluirInactivas));
+    }
+
+    [Theory]
+    [InlineData("pagina=0", "Pagina")]
+    [InlineData("tamanoPagina=0", "TamanoPagina")]
+    [InlineData("tamanoPagina=101", "TamanoPagina")]
+    [InlineData("pagina=abc", "pagina")]
+    public async Task Listar_con_limites_invalidos_es_400_por_campo(string consulta, string campo)
+    {
+        var respuesta = await Cliente(RolUsuario.Alumno).GetAsync($"/api/cafeterias?{consulta}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+        var errores = (await respuesta.Content.ReadFromJsonAsync<JsonObject>())!["errors"]!.AsObject();
+        Assert.Contains(errores, e => string.Equals(e.Key, campo, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Listar_con_busqueda_de_mas_de_100_caracteres_es_400()
+    {
+        var respuesta = await Cliente(RolUsuario.Alumno).GetAsync($"/api/cafeterias?buscar={new string('x', 101)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
     }
 
     [Fact]
@@ -172,8 +217,16 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
 
         private Task<T> Responder<T>(T valor) => Error is null ? Task.FromResult(valor) : Task.FromException<T>(Error);
 
-        public Task<IReadOnlyList<CafeteriaDto>> ListarAsync(bool incluirInactivas, CancellationToken ct = default) =>
-            Responder<IReadOnlyList<CafeteriaDto>>([Cafeteria()]);
+        public ConsultaCafeteriasDto? UltimaConsulta { get; private set; }
+
+        public Task<PaginaDto<CafeteriaDto>> ListarAsync(ConsultaCafeteriasDto consulta, CancellationToken ct = default)
+        {
+            UltimaConsulta = consulta;
+            return Responder(new PaginaDto<CafeteriaDto>
+            {
+                Items = [Cafeteria()], Total = 1534, Pagina = consulta.Pagina, TamanoPagina = consulta.TamanoPagina
+            });
+        }
         public Task<CafeteriaDto> ObtenerAsync(Guid idCafeteria, CancellationToken ct = default) => Responder(Cafeteria());
         public Task<CafeteriaDto> CrearAsync(GuardarCafeteriaDto dto, CancellationToken ct = default)
         {

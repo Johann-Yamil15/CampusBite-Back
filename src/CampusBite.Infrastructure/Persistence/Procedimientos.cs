@@ -69,6 +69,10 @@ public static class Procedimientos
     public static NpgsqlParameter Numero(string nombre, decimal valor) =>
         new(nombre, NpgsqlDbType.Numeric) { Value = valor };
 
+    // JY-Sprint4 31/10/2026: límites y desplazamientos de la paginación
+    public static NpgsqlParameter Entero(string nombre, int valor) =>
+        new(nombre, NpgsqlDbType.Integer) { Value = valor };
+
     public static NpgsqlParameter Logico(string nombre, bool valor) =>
         new(nombre, NpgsqlDbType.Boolean) { Value = valor };
 
