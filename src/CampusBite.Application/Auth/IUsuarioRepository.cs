@@ -1,3 +1,4 @@
+using CampusBite.Domain.Auth;
 using CampusBite.Domain.Cafeterias;
 
 namespace CampusBite.Application.Auth;
@@ -12,6 +13,16 @@ public interface IUsuarioRepository
 
     // null si el correo no está registrado
     Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default);
+
+    // JY-Sprint4 31/10/2026: guarda el hash del token de verificación y devuelve el nombre del usuario, o null si el
+    // correo no existe, está inactivo o ya está verificado (en ese caso no se manda correo ni se avisa)
+    Task<string?> GenerarVerificacionAsync(
+        string correo, string tokenHash, DateTimeOffset expira, CancellationToken cancellationToken = default);
+
+    // JY-Sprint4 31/10/2026: marca el correo como verificado y devuelve al usuario para iniciar su sesión.
+    // BusinessRuleException si el token no existe, ya se usó o venció
+    Task<(Guid IdUsuario, string Correo, RolUsuario Rol)> VerificarCorreoAsync(
+        string tokenHash, CancellationToken cancellationToken = default);
 
     // JJ-Sprint3 21/10/2026: TEC-12. No falla ni avisa si el correo no existe (a propósito, por seguridad)
     Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default);

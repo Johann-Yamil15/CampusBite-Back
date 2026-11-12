@@ -24,34 +24,63 @@ public class AuthController : ControllerBase
         _usuarioActual = usuarioActual;
     }
 
-    // JJ-Sprint2 09/10/2026: registra un alumno y devuelve su token (inicia sesión de una vez)
+    // JJ-Sprint2 09/10/2026: registra un alumno.
+    // JY-Sprint4 31/10/2026: ya no inicia sesión; manda el correo de verificación
     [HttpPost("registro")]
     [AllowAnonymous]
     [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
-    [ProducesResponseType<AuthResponseDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<RegistroPendienteDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
-    public async Task<ActionResult<AuthResponseDto>> Registrar([FromBody] RegistroRequestDto dto, CancellationToken cancellationToken)
+    public async Task<ActionResult<RegistroPendienteDto>> Registrar([FromBody] RegistroRequestDto dto, CancellationToken cancellationToken)
     {
         var respuesta = await _authService.RegistrarAsync(dto, cancellationToken);
         return StatusCode(StatusCodes.Status201Created, respuesta);
     }
 
     // JJ-Sprint3 22/10/2026: TEC-11. Autorregistro público de un negocio: crea al encargado (AdminCafeteria) y su
-    // cafetería, y devuelve su token como /registro. La autorización real está en la BD (sp_autorregistrar_cafeteria)
+    // cafetería. La autorización real está en la BD (sp_autorregistrar_cafeteria).
+    // JY-Sprint4 31/10/2026: igual que /registro, manda el correo de verificación en lugar de iniciar sesión
     [HttpPost("registro-cafeteria")]
     [AllowAnonymous]
     [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
-    [ProducesResponseType<AuthResponseDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType<RegistroPendienteDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
-    public async Task<ActionResult<AuthResponseDto>> RegistrarCafeteria(
+    public async Task<ActionResult<RegistroPendienteDto>> RegistrarCafeteria(
         [FromBody] RegistroCafeteriaRequestDto dto, CancellationToken cancellationToken)
     {
         var respuesta = await _authService.RegistrarCafeteriaAsync(dto, cancellationToken);
         return StatusCode(StatusCodes.Status201Created, respuesta);
+    }
+
+    // JY-Sprint4 31/10/2026: el frontend manda el token del enlace del correo; si sirve, inicia la sesión
+    [HttpPost("verificar-correo")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
+    [ProducesResponseType<AuthResponseDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<AuthResponseDto>> VerificarCorreo(
+        [FromBody] VerificarCorreoRequestDto dto, CancellationToken cancellationToken)
+    {
+        return Ok(await _authService.VerificarCorreoAsync(dto, cancellationToken));
+    }
+
+    // JY-Sprint4 31/10/2026: 202 siempre, exista o no la cuenta, para no revelar qué correos están registrados
+    [HttpPost("reenviar-verificacion")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ReenviarVerificacion(
+        [FromBody] ReenviarVerificacionRequestDto dto, CancellationToken cancellationToken)
+    {
+        await _authService.ReenviarVerificacionAsync(dto, cancellationToken);
+        return Accepted(new { mensaje = "Si la cuenta existe y falta verificarla, te enviamos un correo nuevo." });
     }
 
     // JJ-Sprint3 21/10/2026: TEC-12. Recuperación simple (sin código de verificación); 200 siempre,
@@ -68,13 +97,15 @@ public class AuthController : ControllerBase
         return Ok(new { mensaje = "Si el correo está registrado, su contraseña ya se actualizó." });
     }
 
-    // JJ-Sprint2 09/10/2026: inicia sesión; mismo 401 para correo inexistente o contraseña incorrecta
+    // JJ-Sprint2 09/10/2026: inicia sesión; mismo 401 para correo inexistente o contraseña incorrecta.
+    // JY-Sprint4 31/10/2026: 403 si la contraseña es correcta pero falta verificar el correo
     [HttpPost("login")]
     [AllowAnonymous]
     [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
     [ProducesResponseType<AuthResponseDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginRequestDto dto, CancellationToken cancellationToken)
     {

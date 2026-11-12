@@ -22,6 +22,7 @@ DECLARE
   v_rol    SMALLINT;
   v_hash   VARCHAR;
   v_activo BOOLEAN;
+  v_verif  BOOLEAN;
   v_codigo TEXT;
   v_json   JSONB;
   v_n      INT;
@@ -52,8 +53,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 32, format('Se esperaban 32 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 32 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 34, format('Se esperaban 34 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 34 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
@@ -63,9 +64,10 @@ BEGIN
     CALL sp_registrar_usuario('Otro', 'nuevo@ejemplo.TEST', 'HASH_Y', NULL, NULL, v_id);   -- CITEXT: mismo correo
   EXCEPTION WHEN unique_violation THEN v_ok := true; END;
   ASSERT v_ok, 'El correo duplicado (sin distinguir mayúsculas) debió rechazarse';
-  CALL sp_obtener_credenciales('NUEVO@ejemplo.test', v_id, v_rol, v_hash, v_activo);
+  CALL sp_obtener_credenciales('NUEVO@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
   ASSERT v_rol = 1 AND v_hash = 'HASH_X' AND v_activo, 'sp_obtener_credenciales debe encontrar al alumno';
-  CALL sp_obtener_credenciales('nadie@ejemplo.test', v_id, v_rol, v_hash, v_activo);
+  ASSERT NOT v_verif, 'Un alumno recién registrado nace con el correo sin verificar';
+  CALL sp_obtener_credenciales('nadie@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
   ASSERT v_id IS NULL, 'Un correo inexistente debe devolver NULL';
   RAISE NOTICE 'OK 2: registro, correo duplicado (CITEXT) y credenciales';
 
@@ -387,6 +389,7 @@ DECLARE
   v_id      UUID;
   v_otro    UUID;
   v_json    JSONB;
+  v_total   INT;
   v_ok      BOOLEAN;
 BEGIN
   SET LOCAL ROLE app_backend;
@@ -447,14 +450,15 @@ BEGIN
   ASSERT v_json IS NULL, 'Una cafetería inactiva no debe verse para un alumno';
   CALL sp_obtener_cafeteria(v_id, c_sistema, v_json);
   ASSERT (v_json->>'activa')::boolean = false, 'admin_sistema sí ve la inactiva';
-  CALL sp_listar_cafeterias(c_alumno, false, v_json);
+  CALL sp_listar_cafeterias(c_alumno, false, NULL, 100, 0, v_total, v_json);
   ASSERT NOT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'La lista normal no trae inactivas';
   v_ok := false;
-  BEGIN CALL sp_listar_cafeterias(c_alumno, true, v_json);
+  BEGIN CALL sp_listar_cafeterias(c_alumno, true, NULL, 100, 0, v_total, v_json);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'Solo admin_sistema lista inactivas';
-  CALL sp_listar_cafeterias(c_sistema, true, v_json);
+  CALL sp_listar_cafeterias(c_sistema, true, NULL, 100, 0, v_total, v_json);
   ASSERT v_json @> jsonb_build_array(jsonb_build_object('id_cafeteria', v_id)), 'admin_sistema lista inactivas';
+  ASSERT v_total >= jsonb_array_length(v_json) AND v_total > 0, 'El total cuenta todas las que cumplen el filtro';
   CALL sp_cambiar_activa_cafeteria(v_id, true, c_sistema);
   CALL sp_obtener_cafeteria(v_id, c_alumno, v_json);
   ASSERT (v_json->>'activa')::boolean, 'Reactivada vuelve a verse';
@@ -613,6 +617,12 @@ BEGIN
   BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL mala', NULL, 10, true, 'ftp://x/y.png');
   EXCEPTION WHEN check_violation THEN v_ok := true; END;
   ASSERT v_ok, 'Una URL que no es http(s) debió rechazarse';
+  v_ok := false;
+  BEGIN CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL http', NULL, 10, true, 'http://ejemplo.com/y.png');
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una URL http a un servidor remoto debió rechazarse (solo https)';
+  CALL sp_crear_producto(gen_random_uuid(), c_cafe, c_admin, NULL, 'URL Azurite', NULL, 10, true,
+                         'http://127.0.0.1:10000/devstoreaccount1/productos/x.png');
   RESET ROLE;
 
   ASSERT EXISTS (SELECT 1 FROM bitacora WHERE tabla = 'producto' AND id_registro = v_id::text
@@ -717,7 +727,7 @@ BEGIN
   EXCEPTION WHEN no_data_found THEN v_ok := true; END;
   ASSERT v_ok, 'Un producto ya eliminado es "no existe"';
 
-  CALL sp_crear_orden(c_alumno, c_cafe, v_hora, 'tarjeta',
+  CALL sp_crear_orden(c_alumno, c_cafe, v_hora, 'efectivo',
     jsonb_build_array(jsonb_build_object('id_producto', v_pedido, 'cantidad', 1)), NULL, v_orden);
   v_ok := false;
   BEGIN CALL sp_eliminar_producto(v_pedido, c_admin, v_imagen);
@@ -739,5 +749,110 @@ BEGIN
   RAISE NOTICE 'OK 26: eliminar producto devuelve su imagen, respeta permisos y no rompe el historial de órdenes';
 END $$;
 
+-- 27. Verificación de correo (JY, Sprint 4) ----------------------------------------
+-- JY-Sprint4 31/10/2026: el registro nace sin verificar; el token se guarda como hash, se reemplaza al pedir otro,
+-- vence y sirve una sola vez; las cuentas verificadas o inexistentes no reciben token; la bitácora no guarda el hash.
+DO $$
+DECLARE
+  c_alumno  UUID := '00000000-0000-0000-0000-0000000000a1';   -- de los datos de prueba: ya verificado
+  v_id      UUID;
+  v_nombre  VARCHAR;
+  v_correo  VARCHAR;
+  v_rol     SMALLINT;
+  v_hash    VARCHAR;
+  v_activo  BOOLEAN;
+  v_verif   BOOLEAN;
+  v_ok      BOOLEAN;
+  c_h1      VARCHAR := repeat('a', 64);
+  c_h2      VARCHAR := repeat('b', 64);
+BEGIN
+  SET LOCAL ROLE app_backend;
+  CALL sp_registrar_usuario('Por Verificar', 'verificar@ejemplo.test', 'HASH_V', NULL, NULL, v_id);
+  CALL sp_obtener_credenciales('verificar@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
+  ASSERT NOT v_verif, 'Nace sin verificar';
+
+  CALL sp_generar_verificacion('VERIFICAR@ejemplo.test', c_h1, now() + interval '1 day', v_nombre);
+  ASSERT v_nombre = 'Por Verificar', 'Devuelve el nombre para el correo (sin distinguir mayúsculas)';
+  CALL sp_generar_verificacion('verificar@ejemplo.test', c_h2, now() + interval '1 day', v_nombre);
+
+  v_ok := false;
+  BEGIN CALL sp_verificar_correo(c_h1, v_id, v_correo, v_rol);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'El token anterior deja de servir al pedir otro';
+
+  CALL sp_verificar_correo(c_h2, v_id, v_correo, v_rol);
+  ASSERT v_correo = 'verificar@ejemplo.test' AND v_rol = 1, 'Devuelve el usuario para iniciar sesión';
+  CALL sp_obtener_credenciales('verificar@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
+  ASSERT v_verif, 'Queda verificado';
+
+  v_ok := false;
+  BEGIN CALL sp_verificar_correo(c_h2, v_id, v_correo, v_rol);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'El enlace sirve una sola vez';
+
+  CALL sp_generar_verificacion('verificar@ejemplo.test', c_h1, now() + interval '1 day', v_nombre);
+  ASSERT v_nombre IS NULL, 'Una cuenta ya verificada no recibe otro token';
+  CALL sp_generar_verificacion('nadie@ejemplo.test', c_h1, now() + interval '1 day', v_nombre);
+  ASSERT v_nombre IS NULL, 'Un correo que no existe no recibe token';
+
+  v_ok := false;
+  BEGIN CALL sp_generar_verificacion('verificar@ejemplo.test', 'no-es-hash', now() + interval '1 day', v_nombre);
+  EXCEPTION WHEN check_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'El hash debe ser SHA-256 en hexadecimal';
+
+  -- Token vencido
+  CALL sp_registrar_usuario('Vencido', 'vencido@ejemplo.test', 'HASH_V', NULL, NULL, v_id);
+  CALL sp_generar_verificacion('vencido@ejemplo.test', c_h1, now() + interval '1 second', v_nombre);
+  RESET ROLE;
+  UPDATE usuario SET verificacion_expira = now() - interval '1 minute' WHERE correo = 'vencido@ejemplo.test';
+  SET LOCAL ROLE app_backend;
+  v_ok := false;
+  BEGIN CALL sp_verificar_correo(c_h1, v_id, v_correo, v_rol);
+  EXCEPTION WHEN check_violation THEN v_ok := SQLERRM LIKE '%venció%'; END;
+  ASSERT v_ok, 'Un enlace vencido se rechaza con su propio mensaje';
+  RESET ROLE;
+
+  ASSERT (SELECT correo_verificado FROM usuario WHERE id_usuario = c_alumno), 'Los usuarios de prueba vienen verificados';
+  ASSERT NOT EXISTS (SELECT 1 FROM bitacora WHERE tabla = 'usuario'
+                       AND (datos_antes ? 'verificacion_hash' OR datos_despues ? 'verificacion_hash')),
+         'La bitácora no guarda el hash del token';
+  ASSERT EXISTS (SELECT 1 FROM bitacora b JOIN usuario u ON b.id_registro = u.id_usuario::text
+                  WHERE u.correo = 'verificar@ejemplo.test' AND b.operacion = 'U' AND b.cambiado_por = u.id_usuario),
+         'La bitácora registra al propio usuario como autor de la verificación';
+
+  RAISE NOTICE 'OK 27: verificación de correo con token de un solo uso, reemplazable, con vencimiento y sin revelar correos';
+END $$;
+
+-- 28. Sin duplicados en los POST (JY, Sprint 4) -------------------------------------
+-- JY-Sprint4 05/11/2026: los índices únicos sin distinguir mayúsculas existen (si una base tenía repetidos, el script
+-- solo avisa y no los crea: aquí se detecta) y categorías y matrículas ya no aceptan "Bebidas" = " bebidas ".
+DO $$
+DECLARE
+  c_admin  UUID := '00000000-0000-0000-0000-0000000000a2';     -- encargado de c1
+  c_cafe   UUID := '00000000-0000-0000-0000-0000000000c1';
+  v_id     UUID;
+  v_ok     BOOLEAN;
+BEGIN
+  ASSERT (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname IN
+           ('ux_cafeteria_nombre', 'ux_producto_nombre', 'ux_categoria_nombre', 'ux_usuario_matricula')) = 4,
+         'Faltan índices únicos (cafetería, producto, categoría o matrícula): revisa los avisos al aplicar el script';
+
+  SET LOCAL ROLE app_backend;
+  CALL sp_crear_categoria(c_cafe, c_admin, 'Postres Fríos', v_id);
+  v_ok := false;
+  BEGIN CALL sp_crear_categoria(c_cafe, c_admin, '  postres fríos ', v_id);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una categoría repetida (sin distinguir mayúsculas ni espacios) debió rechazarse';
+
+  CALL sp_registrar_usuario('Mat Uno', 'mat1@ejemplo.test', 'HASH', 'UTT7777', NULL, v_id);
+  v_ok := false;
+  BEGIN CALL sp_registrar_usuario('Mat Dos', 'mat2@ejemplo.test', 'HASH', ' utt7777 ', NULL, v_id);
+  EXCEPTION WHEN unique_violation THEN v_ok := true; END;
+  ASSERT v_ok, 'Una matrícula repetida (sin distinguir mayúsculas) debió rechazarse';
+  RESET ROLE;
+
+  RAISE NOTICE 'OK 28: los POST no aceptan duplicados por mayúsculas o espacios (categorías y matrículas) y los índices únicos existen';
+END $$;
+
 ROLLBACK;
-\echo '>>> SMOKE TEST COMPLETO: 26 de 26 OK (transacción revertida)'
+\echo '>>> SMOKE TEST COMPLETO: 28 de 28 OK (transacción revertida)'

@@ -1,3 +1,4 @@
+using CampusBite.Application.Common;
 using CampusBite.Application.Productos.Dtos;
 
 namespace CampusBite.Application.Productos;
@@ -17,7 +18,8 @@ public interface IProductoService
         Guid idCafeteria, Guid idProducto, ArchivoImagen archivo, CancellationToken cancellationToken = default);
 
     // JJ-Sprint4 27/10/2026: TEC-09. CRUD completo de productos y categorías
-    Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, CancellationToken cancellationToken = default);
+    // JY-Sprint4 05/11/2026: paginado (panel del encargado)
+    Task<PaginaDto<ProductoDto>> ListarAsync(Guid idCafeteria, ConsultaProductosDto consulta, CancellationToken cancellationToken = default);
 
     Task ActualizarAsync(Guid idProducto, GuardarProductoDto dto, CancellationToken cancellationToken = default);
 

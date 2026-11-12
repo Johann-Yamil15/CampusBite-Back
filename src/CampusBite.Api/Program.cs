@@ -24,6 +24,9 @@ if (!string.IsNullOrEmpty(port))
 // JJ-Sprint2 09/10/2026: errores de validación (400) con título en español y el mismo formato ProblemDetails
 // JY-Sprint3 20/10/2026: los enums viajan como texto ("Efectivo"), no como número; no se aceptan números
 // JY-Sprint4 27/10/2026: TEC-09, los formularios (multipart) se leen en cultura invariante: "55.50" es 55.50 siempre
+// JY-Sprint4 31/10/2026: HSTS de un año (sin subdominios: azurewebsites.net es un dominio compartido)
+builder.Services.AddHsts(options => options.MaxAge = TimeSpan.FromDays(365));
+
 builder.Services.AddControllers(options =>
     {
         var indice = options.ValueProviderFactories.IndexOf(
@@ -84,6 +87,12 @@ if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger
 {
     app.UseSwagger();
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/swagger/v1/swagger.json", "CampusBite API v1"));
+}
+
+// JY-Sprint4 31/10/2026: HSTS fuera de desarrollo: el navegador recuerda por un año que solo debe usar https
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
 }
 
 app.UseHttpsRedirection();

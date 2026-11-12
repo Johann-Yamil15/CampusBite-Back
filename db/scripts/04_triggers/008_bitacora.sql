@@ -11,9 +11,9 @@ DECLARE
   v_id      TEXT := '';
   v_columna TEXT;
 BEGIN
-  -- contrasena_hash nunca se copia a la bitácora
-  IF TG_OP <> 'INSERT' THEN v_antes   := to_jsonb(OLD) - 'contrasena_hash'; END IF;
-  IF TG_OP <> 'DELETE' THEN v_despues := to_jsonb(NEW) - 'contrasena_hash'; END IF;
+  -- contrasena_hash y el hash del token de verificación (JY-Sprint4) nunca se copian a la bitácora
+  IF TG_OP <> 'INSERT' THEN v_antes   := to_jsonb(OLD) - 'contrasena_hash' - 'verificacion_hash'; END IF;
+  IF TG_OP <> 'DELETE' THEN v_despues := to_jsonb(NEW) - 'contrasena_hash' - 'verificacion_hash'; END IF;
 
   -- Un UPDATE que no cambió nada (aparte de actualizado_en) no se registra
   IF TG_OP = 'UPDATE' AND (v_antes - 'actualizado_en') = (v_despues - 'actualizado_en') THEN

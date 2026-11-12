@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using CampusBite.Api.Tests.Seguridad;
 using CampusBite.Application.Auth;
+using CampusBite.Application.Common.Correo;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Cafeterias;
 using CampusBite.Domain.Common.Exceptions;
@@ -19,6 +20,7 @@ public class RegistroCafeteriaEndpointTests : IClassFixture<ApiDePrueba>
     private const string Ruta = "/api/auth/registro-cafeteria";
     private readonly ApiDePrueba _api;
     private readonly RepositorioFalso _repositorio = new();
+    private readonly CorreoFalso _correo = new();
 
     public RegistroCafeteriaEndpointTests(ApiDePrueba api)
     {
@@ -30,6 +32,8 @@ public class RegistroCafeteriaEndpointTests : IClassFixture<ApiDePrueba>
     {
         s.RemoveAll<IUsuarioRepository>();
         s.AddSingleton<IUsuarioRepository>(_repositorio);
+        s.RemoveAll<IEnviadorCorreo>();
+        s.AddSingleton<IEnviadorCorreo>(_correo);
     })).CreateClient();
 
     private static Dictionary<string, object?> Cuerpo() => new()
@@ -45,29 +49,21 @@ public class RegistroCafeteriaEndpointTests : IClassFixture<ApiDePrueba>
         ["metodosPago"] = new[] { "Efectivo", "Tarjeta" }
     };
 
+    // JY-Sprint4 31/10/2026: ya no devuelve token; manda el correo de verificación
     [Fact]
-    public async Task Sin_sesion_crea_el_negocio_y_devuelve_201_con_rol_AdminCafeteria()
+    public async Task Sin_sesion_crea_el_negocio_y_devuelve_201_con_el_correo_de_verificacion_enviado()
     {
         var respuesta = await Cliente().PostAsJsonAsync(Ruta, Cuerpo());
 
         Assert.Equal(HttpStatusCode.Created, respuesta.StatusCode);
         var json = JsonNode.Parse(await respuesta.Content.ReadAsStringAsync())!;
-        Assert.Equal("AdminCafeteria", (string?)json["rol"]);
         Assert.Equal("ana@negocio.mx", (string?)json["correo"]);
-        Assert.False(string.IsNullOrEmpty((string?)json["token"]));
+        Assert.True((bool)json["correoEnviado"]!);
+        Assert.Null(json["token"]);
         Assert.Equal([MetodoPago.Efectivo, MetodoPago.Tarjeta], _repositorio.Metodos);
         Assert.NotEqual("Password123", _repositorio.Hash);                 // llega cifrada al repositorio
-    }
-
-    [Fact]
-    public async Task El_token_devuelto_entra_como_AdminCafeteria()
-    {
-        var registro = JsonNode.Parse(await (await Cliente().PostAsJsonAsync(Ruta, Cuerpo())).Content.ReadAsStringAsync())!;
-        var cliente = _api.ClienteConToken((string)registro["token"]!);
-
-        var me = JsonNode.Parse(await cliente.GetStringAsync("/api/auth/me"))!;
-
-        Assert.Equal(nameof(RolUsuario.AdminCafeteria), (string?)me["rol"]);
+        var enviado = Assert.Single(_correo.Enviados);
+        Assert.Equal(("ana@negocio.mx", "Ana López"), (enviado.Correo, enviado.Nombre));
     }
 
     [Theory]
@@ -144,5 +140,12 @@ public class RegistroCafeteriaEndpointTests : IClassFixture<ApiDePrueba>
 
         public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+
+        public Task<string?> GenerarVerificacionAsync(
+            string correo, string tokenHash, DateTimeOffset expira, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>("Ana López");
+
+        public Task<(Guid IdUsuario, string Correo, RolUsuario Rol)> VerificarCorreoAsync(
+            string tokenHash, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }
