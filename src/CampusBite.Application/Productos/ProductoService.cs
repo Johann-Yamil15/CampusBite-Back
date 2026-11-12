@@ -1,3 +1,4 @@
+using CampusBite.Application.Common;
 using CampusBite.Application.Common.Security;
 using CampusBite.Application.Productos.Dtos;
 using CampusBite.Domain.Common.Exceptions;
@@ -116,8 +117,14 @@ public class ProductoService : IProductoService
     }
 
     // JJ-Sprint4 27/10/2026: TEC-09. CRUD completo de productos y categorías
-    public Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, CancellationToken cancellationToken = default) =>
-        _productos.ListarAsync(idCafeteria, _usuario.Id, cancellationToken);
+    public async Task<PaginaDto<ProductoDto>> ListarAsync(
+        Guid idCafeteria, ConsultaProductosDto consulta, CancellationToken cancellationToken = default)
+    {
+        var (total, items) = await _productos.ListarAsync(
+            idCafeteria, _usuario.Id, consulta.BuscarNormalizado(), consulta.IdCategoria, consulta.TamanoPagina,
+            consulta.Desplazamiento(), cancellationToken);
+        return consulta.CrearPagina(total, items);
+    }
 
     public Task ActualizarAsync(Guid idProducto, GuardarProductoDto dto, CancellationToken cancellationToken = default) =>
         _productos.ActualizarAsync(idProducto, _usuario.Id, Normalizar(dto), cancellationToken);

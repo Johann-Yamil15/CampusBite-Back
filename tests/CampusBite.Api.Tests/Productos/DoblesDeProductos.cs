@@ -72,11 +72,21 @@ internal sealed class RepositorioFalso : IProductoRepository
     }
 
     // JJ-Sprint4 27/10/2026: TEC-09
-    public Task<IReadOnlyList<ProductoDto>> ListarAsync(
-        Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
+    // JY-Sprint4 05/11/2026: paginado como el SP (filtra por nombre y categoría, ordena por nombre)
+    public (string? Buscar, Guid? IdCategoria, int Limite, int Desplazamiento)? UltimoListado { get; private set; }
+
+    public Task<(int Total, IReadOnlyList<ProductoDto> Items)> ListarAsync(
+        Guid idCafeteria, Guid idActor, string? buscar, Guid? idCategoria, int limite, int desplazamiento,
+        CancellationToken cancellationToken = default)
     {
         if (Error is not null) throw Error;
-        return Task.FromResult<IReadOnlyList<ProductoDto>>(Productos);
+        UltimoListado = (buscar, idCategoria, limite, desplazamiento);
+        var filtrados = Productos
+            .Where(p => buscar is null || p.Nombre.Contains(buscar, StringComparison.OrdinalIgnoreCase))
+            .Where(p => idCategoria is null || p.IdCategoria == idCategoria)
+            .OrderBy(p => p.Nombre)
+            .ToList();
+        return Task.FromResult<(int, IReadOnlyList<ProductoDto>)>((filtrados.Count, filtrados.Skip(desplazamiento).Take(limite).ToList()));
     }
 
     public Task ActualizarAsync(

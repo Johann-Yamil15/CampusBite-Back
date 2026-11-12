@@ -97,6 +97,7 @@ public class CafeteriasEndpointsTests : IClassFixture<ApiDePrueba>
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
         var cuerpo = (await respuesta.Content.ReadFromJsonAsync<JsonObject>())!;
         Assert.Equal((1534, 3, 50), (cuerpo["total"]!.GetValue<int>(), cuerpo["pagina"]!.GetValue<int>(), cuerpo["tamanoPagina"]!.GetValue<int>()));
+        Assert.Equal((31, true, true), (cuerpo["totalPaginas"]!.GetValue<int>(), cuerpo["tieneAnterior"]!.GetValue<bool>(), cuerpo["tieneSiguiente"]!.GetValue<bool>()));
         Assert.Equal("Cafetería Central", cuerpo["items"]![0]!["nombre"]!.GetValue<string>());
         Assert.Equal("central", _servicio.UltimaConsulta!.Buscar);
     }

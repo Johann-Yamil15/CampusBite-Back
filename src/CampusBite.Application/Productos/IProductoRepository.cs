@@ -26,7 +26,10 @@ public interface IProductoRepository
         Guid idCafeteria, Guid idProducto, Guid idActor, string imagenUrl, CancellationToken cancellationToken = default);
 
     // JJ-Sprint4 27/10/2026: TEC-09. CRUD completo de productos y categorías
-    Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default);
+    // JY-Sprint4 05/11/2026: una página (buscar e idCategoria null = sin filtro) y el total que cumple el filtro
+    Task<(int Total, IReadOnlyList<ProductoDto> Items)> ListarAsync(
+        Guid idCafeteria, Guid idActor, string? buscar, Guid? idCategoria, int limite, int desplazamiento,
+        CancellationToken cancellationToken = default);
 
     Task ActualizarAsync(Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default);
 

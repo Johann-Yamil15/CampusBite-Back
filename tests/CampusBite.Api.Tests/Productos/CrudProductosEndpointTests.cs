@@ -67,8 +67,44 @@ public class CrudProductosEndpointTests : IClassFixture<ApiDePrueba>
     {
         var respuesta = await Cliente(RolUsuario.AdminCafeteria).GetAsync(RutaProductos);
         Assert.Equal(HttpStatusCode.OK, respuesta.StatusCode);
-        var lista = JsonNode.Parse(await respuesta.Content.ReadAsStringAsync())!.AsArray();
-        Assert.NotNull(lista);
+        var pagina = JsonNode.Parse(await respuesta.Content.ReadAsStringAsync())!;
+        Assert.NotNull(pagina["items"]!.AsArray());
+        Assert.Equal((1, 20), ((int)pagina["pagina"]!, (int)pagina["tamanoPagina"]!));
+    }
+
+    // JY-Sprint4 05/11/2026: paginado
+    [Fact]
+    public async Task Listar_pagina_busca_y_filtra_por_categoria()
+    {
+        var bebidas = Guid.NewGuid();
+        for (var n = 1; n <= 45; n++)
+        {
+            _repositorio.Productos.Add(new Application.Productos.Dtos.ProductoDto
+            {
+                IdProducto = Guid.NewGuid(), IdCafeteria = IdCafeteria, Nombre = $"Producto {n:00}",
+                IdCategoria = n % 3 == 0 ? bebidas : null
+            });
+        }
+
+        var pagina = JsonNode.Parse(await (await Cliente(RolUsuario.AdminCafeteria)
+            .GetAsync($"{RutaProductos}?pagina=2&tamanoPagina=10&buscar=producto&idCategoria={bebidas}")).Content.ReadAsStringAsync())!;
+
+        Assert.Equal(15, (int)pagina["total"]!);                          // 45 / 3 son bebidas
+        Assert.Equal(5, pagina["items"]!.AsArray().Count);                 // segunda página de 10: quedan 5
+        Assert.Equal(("producto", (Guid?)bebidas, 10, 10), _repositorio.UltimoListado);
+    }
+
+    [Theory]
+    [InlineData("tamanoPagina=101", "TamanoPagina")]
+    [InlineData("pagina=0", "Pagina")]
+    [InlineData("idCategoria=no-es-guid", "idCategoria")]
+    public async Task Listar_con_parametros_invalidos_es_400(string consulta, string campo)
+    {
+        var respuesta = await Cliente(RolUsuario.AdminCafeteria).GetAsync($"{RutaProductos}?{consulta}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+        var errores = JsonNode.Parse(await respuesta.Content.ReadAsStringAsync())!["errors"]!.AsObject();
+        Assert.Contains(errores, e => string.Equals(e.Key, campo, StringComparison.OrdinalIgnoreCase));
     }
 
     // --- PUT Actualizar ---

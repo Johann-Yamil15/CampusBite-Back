@@ -27,15 +27,11 @@ public class CafeteriaService : ICafeteriaService
             throw new ForbiddenException("Solo el administrador del sistema puede ver cafeterías inactivas.");
         }
 
-        var buscar = string.IsNullOrWhiteSpace(consulta.Buscar) ? null : consulta.Buscar.Trim();
         var (total, items) = await _cafeterias.ListarAsync(
-            _usuario.Id, consulta.IncluirInactivas, buscar, consulta.TamanoPagina,
-            (consulta.Pagina - 1) * consulta.TamanoPagina, cancellationToken);
+            _usuario.Id, consulta.IncluirInactivas, consulta.BuscarNormalizado(), consulta.TamanoPagina,
+            consulta.Desplazamiento(), cancellationToken);
 
-        return new PaginaDto<CafeteriaDto>
-        {
-            Items = items, Total = total, Pagina = consulta.Pagina, TamanoPagina = consulta.TamanoPagina
-        };
+        return consulta.CrearPagina(total, items);
     }
 
     public async Task<CafeteriaDto> ObtenerAsync(Guid idCafeteria, CancellationToken cancellationToken = default)
