@@ -33,4 +33,10 @@ public interface IUsuarioRepository
         string nombreEncargado, string correo, string contrasenaHash, string? telefono,
         string nombreCafeteria, string ubicacion, bool esDelCampus, string puntoEntrega,
         IReadOnlyList<MetodoPago> metodos, CancellationToken cancellationToken = default);
+
+    // JJ-Sprint5 13/11/2026: usuario por id (sesión actual); null si no existe
+    Task<CredencialesUsuario?> ObtenerPorIdAsync(Guid idUsuario, CancellationToken cancellationToken = default);
+
+    // JJ-Sprint5 13/11/2026: el servicio ya verificó la contraseña actual
+    Task CambiarPasswordAsync(Guid idUsuario, string contrasenaHash, CancellationToken cancellationToken = default);
 }

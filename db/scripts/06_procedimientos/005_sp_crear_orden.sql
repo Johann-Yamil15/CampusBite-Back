@@ -50,6 +50,11 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'La cafetería está cerrada a la hora de recogida solicitada';
   END IF;
+  -- JJ-Sprint5 13/11/2026: "Cerrar por hoy" del encargado
+  IF EXISTS (SELECT 1 FROM cierre_cafeteria k
+              WHERE k.id_cafeteria = p_id_cafeteria AND k.fecha = v_local::date) THEN
+    RAISE EXCEPTION 'La cafetería está cerrada en este momento';
+  END IF;
 
   -- Dos IF separados: jsonb_array_length falla si p_items no es un arreglo.
   IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN

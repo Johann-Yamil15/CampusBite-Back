@@ -42,8 +42,32 @@ GRANT EXECUTE ON PROCEDURE
   sp_eliminar_categoria,
   sp_obtener_producto,
   sp_generar_verificacion,
-  sp_verificar_correo
+  sp_verificar_correo,
+  -- JJ-Sprint5 13/11/2026
+  sp_obtener_orden,
+  sp_confirmar_transferencia,
+  sp_obtener_usuario,
+  sp_cambiar_password,
+  sp_obtener_perfil_alumno,
+  sp_actualizar_perfil_alumno,
+  sp_guardar_preferencias_alumno,
+  sp_favoritos_cafeterias,
+  sp_guardar_favorito_cafeteria,
+  sp_quitar_favorito_cafeteria,
+  sp_favoritos_productos,
+  sp_guardar_favorito_producto,
+  sp_quitar_favorito_producto,
+  sp_obtener_horario,
+  sp_guardar_horario,
+  sp_cambiar_cierre_hoy,
+  sp_listar_promociones,
+  sp_guardar_promocion,
+  sp_eliminar_promocion,
+  sp_promociones_activas,
+  sp_crear_reporte_orden,
+  sp_estadisticas_cafeteria
 TO app_backend;
+-- Funciones internas fn_* (Sprint 5): no se dan a app_backend; las usan los procedimientos SECURITY DEFINER.
 -- Internos (no se dan a app_backend): sp_exigir_gestor_cafeteria, sp_exigir_admin_sistema, sp_validar_datos_cafeteria,
 -- sp_validar_datos_producto.
 

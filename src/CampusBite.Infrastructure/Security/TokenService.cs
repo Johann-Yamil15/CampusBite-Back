@@ -20,7 +20,12 @@ public class TokenService : ITokenService
         _jwt = jwt.Value;
     }
 
-    public (string Token, DateTime ExpiraEn) GenerarToken(Guid idUsuario, string correo, RolUsuario rol)
+    // JJ-Sprint5 13/11/2026: claims "name" e "id_cafeteria" (solo si hay valor)
+    public const string ClaimNombre = "name";
+    public const string ClaimIdCafeteria = "id_cafeteria";
+
+    public (string Token, DateTime ExpiraEn) GenerarToken(Guid idUsuario, string correo, RolUsuario rol,
+        string? nombre = null, Guid? idCafeteria = null)
     {
         var ahora = DateTime.UtcNow;
         var expiraEn = ahora.AddMinutes(_jwt.ExpirationMinutes);
@@ -37,11 +42,17 @@ public class TokenService : ITokenService
                 [JwtRegisteredClaimNames.Sub] = idUsuario.ToString(),
                 [JwtRegisteredClaimNames.Email] = correo,
                 [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
-                [ClaimRol] = rol.ToString()
+                [ClaimRol] = rol.ToString(),
+                [ClaimNombre] = nombre ?? string.Empty
             },
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key)), SecurityAlgorithms.HmacSha256)
         };
+
+        if (idCafeteria is { } caf)
+        {
+            descriptor.Claims[ClaimIdCafeteria] = caf.ToString();
+        }
 
         return (new JsonWebTokenHandler().CreateToken(descriptor), expiraEn);
     }
