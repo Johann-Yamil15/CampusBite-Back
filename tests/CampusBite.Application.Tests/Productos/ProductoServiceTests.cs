@@ -352,14 +352,40 @@ public class ProductoServiceTests
     // ---- CRUD de productos y categorías (TEC-09, JJ) ----
 
     [Fact]
-    public async Task Listar_pide_los_productos_con_el_actor_de_la_sesion()
+    public async Task Listar_pide_la_primera_pagina_de_20_con_el_actor_de_la_sesion()
     {
         _repositorio.Lista.Add(new ProductoDto { IdProducto = IdProducto, IdCafeteria = IdCafeteria, Nombre = "Café" });
+        _repositorio.TotalSimulado = 1500;
 
-        var productos = await _servicio.ListarAsync(IdCafeteria);
+        var pagina = await _servicio.ListarAsync(IdCafeteria, new ConsultaProductosDto());
 
-        Assert.Same(_repositorio.Lista, productos);
-        Assert.Equal((IdCafeteria, _usuario.Id), _repositorio.UltimoListado);
+        Assert.Same(_repositorio.Lista, pagina.Items);
+        Assert.Equal((1500, 1, 20), (pagina.Total, pagina.Pagina, pagina.TamanoPagina));
+        Assert.Equal((IdCafeteria, _usuario.Id, (string?)null, (Guid?)null, 20, 0), _repositorio.UltimoListado);
+    }
+
+    // JY-Sprint4 05/11/2026: paginación del panel de productos
+    [Theory]
+    [InlineData(2, 20, 20)]
+    [InlineData(75, 20, 1480)]
+    [InlineData(3, 100, 200)]
+    public async Task Listar_convierte_la_pagina_en_desplazamiento(int pagina, int tamano, int desplazamiento)
+    {
+        await _servicio.ListarAsync(IdCafeteria, new ConsultaProductosDto { Pagina = pagina, TamanoPagina = tamano });
+
+        Assert.Equal((tamano, desplazamiento), (_repositorio.UltimoListado!.Value.Limite, _repositorio.UltimoListado.Value.Desplazamiento));
+    }
+
+    [Theory]
+    [InlineData("  chila ", "chila")]
+    [InlineData("   ", null)]
+    public async Task Listar_recorta_la_busqueda_y_manda_la_categoria(string buscar, string? esperado)
+    {
+        var categoria = Guid.NewGuid();
+
+        await _servicio.ListarAsync(IdCafeteria, new ConsultaProductosDto { Buscar = buscar, IdCategoria = categoria });
+
+        Assert.Equal((esperado, (Guid?)categoria), (_repositorio.UltimoListado!.Value.Buscar, _repositorio.UltimoListado.Value.IdCategoria));
     }
 
     [Fact]
@@ -559,7 +585,8 @@ public class FakeProductoRepository : IProductoRepository
     public List<ProductoDto> Lista { get; } = [];
     public List<CategoriaDto> Categorias { get; } = [];
     public Guid IdCategoriaNueva { get; } = Guid.NewGuid();
-    public (Guid IdCafeteria, Guid IdActor)? UltimoListado { get; private set; }
+    public (Guid IdCafeteria, Guid IdActor, string? Buscar, Guid? IdCategoria, int Limite, int Desplazamiento)? UltimoListado { get; private set; }
+    public int TotalSimulado { get; set; }
     public (Guid IdProducto, Guid IdActor, DatosProducto Datos)? UltimaEdicion { get; private set; }
     public (Guid IdProducto, bool Disponible, Guid IdActor)? UltimoCambioDisponible { get; private set; }
     public (Guid IdProducto, Guid IdActor)? UltimaEliminacion { get; private set; }
@@ -567,10 +594,12 @@ public class FakeProductoRepository : IProductoRepository
     public (Guid IdCafeteria, Guid IdActor, string Nombre)? UltimaCategoriaCreada { get; private set; }
     public (Guid IdCategoria, Guid IdActor)? UltimaCategoriaEliminada { get; private set; }
 
-    public Task<IReadOnlyList<ProductoDto>> ListarAsync(Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
+    public Task<(int Total, IReadOnlyList<ProductoDto> Items)> ListarAsync(
+        Guid idCafeteria, Guid idActor, string? buscar, Guid? idCategoria, int limite, int desplazamiento,
+        CancellationToken cancellationToken = default)
     {
-        UltimoListado = (idCafeteria, idActor);
-        return Task.FromResult<IReadOnlyList<ProductoDto>>(Lista);
+        UltimoListado = (idCafeteria, idActor, buscar, idCategoria, limite, desplazamiento);
+        return Task.FromResult<(int, IReadOnlyList<ProductoDto>)>((TotalSimulado, Lista));
     }
 
     public Task ActualizarAsync(Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default)

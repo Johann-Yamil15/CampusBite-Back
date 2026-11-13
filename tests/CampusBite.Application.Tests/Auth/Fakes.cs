@@ -1,7 +1,9 @@
 using CampusBite.Application.Auth;
+using CampusBite.Application.Common.Correo;
 using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Cafeterias;
+using CampusBite.Domain.Common.Exceptions;
 
 namespace CampusBite.Application.Tests.Auth;
 
@@ -23,6 +25,7 @@ internal class FakeUsuarioRepository : IUsuarioRepository
         }
 
         UltimoRegistro = (nombre, correo, contrasenaHash, matricula, telefono);
+        Nombres[correo] = nombre;
         var id = Guid.NewGuid();
         Usuarios[correo] = new CredencialesUsuario
         {
@@ -65,12 +68,69 @@ internal class FakeUsuarioRepository : IUsuarioRepository
 
         UltimoRegistroCafeteria = (nombreEncargado, correo, contrasenaHash, telefono, nombreCafeteria,
                                    ubicacion, esDelCampus, puntoEntrega, metodos);
+        Nombres[correo] = nombreEncargado;
         var id = Guid.NewGuid();
         Usuarios[correo] = new CredencialesUsuario
         {
             IdUsuario = id, IdRol = RolUsuario.AdminCafeteria, ContrasenaHash = contrasenaHash, Activo = true
         };
         return Task.FromResult(id);
+    }
+
+    // JY-Sprint4 31/10/2026: verificación de correo, con las mismas reglas que sp_generar_verificacion y
+    // sp_verificar_correo (un token por usuario, de un solo uso, solo para cuentas activas sin verificar)
+    public Dictionary<string, string> Nombres { get; } = new();
+    public Dictionary<string, (string Correo, DateTimeOffset Expira)> Tokens { get; } = new();
+
+    public Task<string?> GenerarVerificacionAsync(
+        string correo, string tokenHash, DateTimeOffset expira, CancellationToken cancellationToken = default)
+    {
+        if (!Usuarios.TryGetValue(correo, out var usuario) || !usuario.Activo || usuario.CorreoVerificado)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        foreach (var anterior in Tokens.Where(t => t.Value.Correo == correo).Select(t => t.Key).ToList())
+        {
+            Tokens.Remove(anterior);
+        }
+        Tokens[tokenHash] = (correo, expira);
+        return Task.FromResult<string?>(Nombres.GetValueOrDefault(correo, "Usuario"));
+    }
+
+    public Task<(Guid IdUsuario, string Correo, RolUsuario Rol)> VerificarCorreoAsync(
+        string tokenHash, CancellationToken cancellationToken = default)
+    {
+        if (!Tokens.Remove(tokenHash, out var token))
+        {
+            throw new BusinessRuleException("El enlace de verificación no es válido o ya se usó");
+        }
+        if (token.Expira <= DateTimeOffset.UtcNow)
+        {
+            throw new BusinessRuleException("El enlace de verificación venció; pide que te enviemos otro");
+        }
+
+        var usuario = Usuarios[token.Correo];
+        usuario.CorreoVerificado = true;
+        return Task.FromResult((usuario.IdUsuario, token.Correo, usuario.IdRol));
+    }
+}
+
+// JY-Sprint4 31/10/2026: guarda los correos "enviados"; con Error simula que el servidor SMTP no responde
+internal class FakeEnviadorCorreo : IEnviadorCorreo
+{
+    public List<(string Correo, string Nombre, string Token)> Enviados { get; } = [];
+    public Exception? Error { get; set; }
+
+    public Task EnviarVerificacionAsync(string correo, string nombre, string token, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        Enviados.Add((correo, nombre, token));
+        return Task.CompletedTask;
     }
 }
 

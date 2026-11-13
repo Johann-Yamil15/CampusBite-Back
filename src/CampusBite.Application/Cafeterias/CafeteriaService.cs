@@ -1,4 +1,5 @@
 using CampusBite.Application.Cafeterias.Dtos;
+using CampusBite.Application.Common;
 using CampusBite.Application.Common.Security;
 using CampusBite.Domain.Auth;
 using CampusBite.Domain.Common.Exceptions;
@@ -18,15 +19,19 @@ public class CafeteriaService : ICafeteriaService
         _usuario = usuario;
     }
 
-    public Task<IReadOnlyList<CafeteriaDto>> ListarAsync(bool incluirInactivas, CancellationToken cancellationToken = default)
+    public async Task<PaginaDto<CafeteriaDto>> ListarAsync(ConsultaCafeteriasDto consulta, CancellationToken cancellationToken = default)
     {
         // Se corta aquí para no ir a la BD con una petición que de todos modos va a negar
-        if (incluirInactivas && _usuario.Rol != RolUsuario.AdminSistema)
+        if (consulta.IncluirInactivas && _usuario.Rol != RolUsuario.AdminSistema)
         {
             throw new ForbiddenException("Solo el administrador del sistema puede ver cafeterías inactivas.");
         }
 
-        return _cafeterias.ListarAsync(_usuario.Id, incluirInactivas, cancellationToken);
+        var (total, items) = await _cafeterias.ListarAsync(
+            _usuario.Id, consulta.IncluirInactivas, consulta.BuscarNormalizado(), consulta.TamanoPagina,
+            consulta.Desplazamiento(), cancellationToken);
+
+        return consulta.CrearPagina(total, items);
     }
 
     public async Task<CafeteriaDto> ObtenerAsync(Guid idCafeteria, CancellationToken cancellationToken = default)

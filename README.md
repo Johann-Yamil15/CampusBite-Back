@@ -66,7 +66,7 @@ de `America/Mexico_City`.
 | Tabla | Columnas principales | Notas |
 |---|---|---|
 | `rol` | `id_rol`, `nombre` | Catálogo: 1 `alumno`, 2 `admin_cafeteria`, 3 `admin_sistema` (enum `RolUsuario`) |
-| `usuario` | `id_usuario`, `id_rol`, `id_cafeteria`, `nombre`, `correo`, `contrasena_hash`, `matricula`, `telefono`, `activo`, `creado_en` | `correo` CITEXT único; `matricula` única; `id_cafeteria` solo para encargados (rol 2) |
+| `usuario` | `id_usuario`, `id_rol`, `id_cafeteria`, `nombre`, `correo`, `contrasena_hash`, `matricula`, `telefono`, `activo`, `correo_verificado`, `verificacion_hash`, `verificacion_expira`, `creado_en` | `correo` CITEXT único; `matricula` única; `id_cafeteria` solo para encargados (rol 2); sin `correo_verificado` no hay login |
 | `cafeteria` | `id_cafeteria`, `nombre`, `ubicacion`, `es_del_campus`, `punto_entrega`, `activa` | Sus encargados están en `usuario.id_cafeteria` |
 | `cafeteria_metodo_pago` | `id_cafeteria`, `metodo` | Un renglón por método aceptado (antes `acepta_*`) |
 | `horario_cafeteria` | `id_cafeteria`, `dia_semana` (1 = lunes … 7), `hora_apertura`, `hora_cierre` | |
@@ -91,7 +91,9 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | Llamada | Devuelve (OUT) | Qué hace |
 |---|---|---|
 | `CALL sp_registrar_usuario(nombre, correo, hash, matricula, telefono, NULL)` | `p_id_usuario` | Crea un alumno. Correo o matrícula repetidos → error `23505` |
-| `CALL sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo` | Para el login; todo `NULL` si el correo no existe |
+| `CALL sp_obtener_credenciales(correo, NULL, NULL, NULL, NULL, NULL)` | `p_id_usuario, p_id_rol, p_contrasena_hash, p_activo, p_correo_verificado` | Para el login; todo `NULL` si el correo no existe |
+| `CALL sp_generar_verificacion(correo, hash_token, expira, NULL)` | `p_nombre` | Guarda el hash del token de verificación; `NULL` si el correo no existe, está inactivo o ya está verificado |
+| `CALL sp_verificar_correo(hash_token, NULL, NULL, NULL)` | `p_id_usuario, p_correo, p_id_rol` | Marca el correo como verificado (token de un solo uso). Inválido, usado o vencido → `23514` |
 | `CALL sp_menu_cafeteria(id_cafeteria o NULL, NULL)` | `p_menu` (JSON) | Cafeterías activas con `metodos_pago` y `productos` |
 | `CALL sp_crear_orden(id_usuario, id_cafeteria, recogida_en, metodo, items, notas, NULL)` | `p_id_orden` | Orden + detalle + pago. `items`: `[{"id_producto":"<uuid>","cantidad":2}]`. Valida alumno activo, horario, recogida ≥ 5 min, método aceptado y productos. Efectivo queda `confirmada`; tarjeta o transferencia, `pendiente` |
 | `CALL sp_confirmar_pago(id_orden, referencia)` | — | Tarjeta o transferencia: pago `pagado` y orden `confirmada` |
@@ -101,14 +103,14 @@ Toda tabla tiene `creado_en` (y `actualizado_en` si sus filas se editan), salvo 
 | `CALL sp_mis_ordenes(id_usuario, limite, desplazamiento, NULL)` | `p_ordenes` (JSON) | Historial del alumno, más recientes primero; máximo 100 por página |
 | `CALL sp_cola_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cola` (JSON) | Pedidos activos por hora de recogida. Solo el encargado o `admin_sistema` (error `42501` si no) |
 | `CALL sp_bitacora_registro(id_actor, tabla, id_registro, limite, NULL)` | `p_historial` (JSON) | Historial completo de un registro (qué cambió, quién y cuándo). Solo `admin_sistema` |
-| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, NULL)` | `p_cafeterias` (JSON) | Cafeterías por nombre; las inactivas solo `admin_sistema` |
+| `CALL sp_listar_cafeterias(id_actor, incluir_inactivas, buscar, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_cafeterias` (JSON) | Una página de cafeterías por nombre (máximo 100) y el total que cumple el filtro; las inactivas solo `admin_sistema` |
 | `CALL sp_obtener_cafeteria(id_cafeteria, id_actor, NULL)` | `p_cafeteria` (JSON o `NULL`) | Una cafetería; `NULL` si no existe o es inactiva y el actor no la administra |
 | `CALL sp_crear_cafeteria(id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[], NULL)` | `p_id_cafeteria` | Alta con métodos de pago. Solo `admin_sistema`. Nombre repetido → `23505` |
 | `CALL sp_actualizar_cafeteria(id_cafeteria, id_actor, nombre, ubicacion, es_del_campus, punto_entrega, metodos[])` | — | Edita y reemplaza los métodos. Su encargado o `admin_sistema` |
 | `CALL sp_cambiar_activa_cafeteria(id_cafeteria, activa, id_actor)` | — | Baja lógica o reactivación. Solo `admin_sistema`. Con órdenes en curso → `55006` |
 | `CALL sp_crear_producto(id_producto, id_cafeteria, id_actor, id_categoria, nombre, descripcion, precio, disponible, imagen_url)` | — | Alta en el menú; `id_producto` lo genera la API (la imagen se sube antes con ese id) e `imagen_url` puede ser `NULL`. Su encargado o `admin_sistema`. Nombre repetido en la cafetería (sin distinguir mayúsculas) → `23505` |
 | `CALL sp_obtener_producto(id_cafeteria, id_producto, id_actor, NULL)` | `p_producto` (JSON o `NULL`) | Un producto con el nombre de su categoría; `NULL` si no existe, es de otra cafetería, o no está disponible / su cafetería está inactiva y el actor no la administra |
-| `CALL sp_listar_productos_cafeteria(id_cafeteria, id_actor, NULL)` | `p_productos` (JSON) | Todos los productos (disponibles o no) por categoría y nombre. Su encargado o `admin_sistema` |
+| `CALL sp_listar_productos_cafeteria(id_cafeteria, id_actor, buscar, id_categoria, limite, desplazamiento, NULL, NULL)` | `p_total`, `p_productos` (JSON) | Una página de productos (disponibles o no) por categoría y nombre (máximo 100) y el total que cumple el filtro. Su encargado o `admin_sistema` |
 | `CALL sp_actualizar_producto(id_producto, id_actor, id_categoria, nombre, descripcion, precio, disponible)` | — | Edita un producto (no la imagen). Nombre repetido → `23505` |
 | `CALL sp_toggle_disponible_producto(id_producto, disponible, id_actor)` | — | Solo cambia la disponibilidad |
 | `CALL sp_eliminar_producto(id_producto, id_actor, NULL)` | `p_imagen_url` (o `NULL`) | Borra el producto y devuelve su imagen para borrar el blob. Si aparece en alguna orden (activa o terminada) → `55006` |
@@ -189,10 +191,35 @@ Reglas:
 Base: `/api/cafeterias`. Todas piden sesión. "Eliminar" es una **baja lógica**: la cafetería deja de aparecer y de
 aceptar órdenes, pero sus órdenes, productos y bitácora se conservan. Se puede reactivar.
 
+**El listado es paginado** para que la PWA no descargue miles de cafeterías de golpe. Ordena por nombre. Todos los
+listados paginados de la API (cafeterías y productos) responden igual:
+
+```json
+{ "items": [ { "idCafeteria": "…", "nombre": "…", "metodosPago": ["Efectivo"], … } ],
+  "total": 1534, "pagina": 1, "tamanoPagina": 20,
+  "totalPaginas": 77, "tieneAnterior": false, "tieneSiguiente": true }
+```
+
+Reglas comunes de la paginación:
+- `total` cuenta **todos** los que cumplen el filtro; `totalPaginas`, `tieneAnterior` y `tieneSiguiente` sirven para
+  los botones o el scroll infinito (pedir la siguiente página mientras `tieneSiguiente` sea `true`).
+- El orden es estable (siempre desempata por id), así que pasar de página no repite ni salta registros.
+- Parámetros inválidos (`pagina=0`, `tamanoPagina=101`, texto donde va un número) → **400** con el campo en `errors`.
+- En la búsqueda, `%` y `_` se buscan como texto, no como comodines.
+
+| Parámetro | Por defecto | Regla |
+|---|---|---|
+| `pagina` | 1 | Desde 1. Una página después de la última devuelve `items` vacío con el `total` real |
+| `tamanoPagina` | 20 | De 1 a 100 |
+| `buscar` | — | Parte del nombre, sin distinguir mayúsculas (máx. 100 caracteres) |
+| `incluirInactivas` | `false` | Solo `AdminSistema` |
+
+Probado con 2000 cafeterías: unos 4 a 8 ms por página en la BD (`db/tests/carga_cafeterias.sql`).
+
 | Método y ruta | Quién | Cuerpo | Respuestas |
 |---|---|---|---|
-| `GET /api/cafeterias` | Cualquier rol (solo activas) | — | 200 · 401 |
-| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 401 · 403 |
+| `GET /api/cafeterias?pagina=1&tamanoPagina=20&buscar=` | Cualquier rol (solo activas) | — | 200 · 400 · 401 |
+| `GET /api/cafeterias?incluirInactivas=true` | `AdminSistema` | — | 200 · 400 · 401 · 403 |
 | `GET /api/cafeterias/{id}` | Cualquier rol; una inactiva solo su encargado y `AdminSistema` (los demás reciben 404) | — | 200 · 401 · 404 |
 | `POST /api/cafeterias` | `AdminSistema` | `GuardarCafeteriaDto` | 201 (+ `Location`) · 400 · 401 · 403 · 409 |
 | `PUT /api/cafeterias/{id}` | Su encargado (`AdminCafeteria` de **esa** cafetería) o `AdminSistema` | `GuardarCafeteriaDto` | 200 · 400 · 401 · 403 · 404 · 409 |
@@ -257,13 +284,31 @@ Resto del CRUD (base `/api/cafeterias/{idCafeteria}`; todo menos `GET .../catego
 
 | Método y ruta | Qué hace | Respuestas |
 |---|---|---|
-| `GET /productos` | Todos los productos de la cafetería, disponibles o no (panel del encargado) | 200, 403 |
+| `GET /productos?pagina=1&tamanoPagina=20&buscar=&idCategoria=` | Productos de la cafetería, disponibles o no (panel del encargado), **paginados** por categoría y nombre. `idCategoria` filtra por categoría (antes el panel podía filtrar en el navegador porque recibía todos) | 200, 400, 403 |
 | `PUT /productos/{idProducto}` | Edita nombre, descripción, precio, categoría y disponibilidad (JSON, mismas reglas que el alta). La imagen se cambia con `POST .../imagen` | 204, 400, 403, 404, 409 |
 | `PATCH /productos/{idProducto}/disponible` | Cuerpo `true` o `false` | 204, 403, 404 |
 | `DELETE /productos/{idProducto}` | Lo borra y también su imagen en Azure. **409** si aparece en alguna orden (activa o en el historial): en ese caso se desactiva | 204, 403, 404, 409 |
 | `GET /categorias` | Categorías de la cafetería (cualquier usuario con sesión) | 200 |
 | `POST /categorias` | `{ "nombre": "Bebidas" }`, 2 a 60 caracteres, único en la cafetería | 201, 400, 403, 409 |
 | `DELETE /categorias/{idCategoria}` | Sus productos quedan sin categoría | 204, 403, 404 |
+
+**Sin duplicados en los POST.** Lo garantiza la BD con índices únicos, así que también protege cuando el celular
+repite la petición por mala señal (la segunda responde **409** con el mensaje para el usuario):
+
+| Qué | Único | Se considera igual |
+|---|---|---|
+| Correo de usuario | En todo el sistema | Sin distinguir mayúsculas (`CITEXT`) |
+| Matrícula | En todo el sistema | Sin distinguir mayúsculas ni espacios de los extremos |
+| Nombre de cafetería | En todo el sistema | Sin distinguir mayúsculas ni espacios de los extremos |
+| Nombre de producto | En su cafetería | Sin distinguir mayúsculas ni espacios de los extremos |
+| Nombre de categoría | En su cafetería | Sin distinguir mayúsculas ni espacios de los extremos |
+| Métodos de pago de una cafetería | — | Los repetidos se ignoran |
+
+Si al aplicar un script de BD sale el aviso "repetidos: no se creó ux_…", la base tiene duplicados viejos: hay que
+corregirlos y volver a aplicar el script (el smoke test falla mientras falte un índice).
+
+Para probar con muchos datos en un ambiente real: `db/tests/cargar_productos_api.py` crea N productos de prueba en una
+cafetería por la API (y con `--eliminar` los borra).
 
 ## Imagen de producto (TEC-10)
 `POST /api/cafeterias/{idCafeteria}/productos/{idProducto}/imagen` · `multipart/form-data` con el campo `archivo`.
@@ -303,11 +348,51 @@ Base: `/api/auth`. Todas las respuestas son JSON; los errores usan el formato Pr
 |---|---|---|---|
 | `POST /api/auth/registro` | No | `nombre`, `correo`, `password`, `matricula?`, `telefono?` | 201 · 400 · 409 · 429 |
 | `POST /api/auth/registro-cafeteria` | No | `nombreEncargado`, `correo`, `password`, `telefono?`, `nombreCafeteria`, `ubicacion`, `esDelCampus`, `puntoEntrega`, `metodosPago` | 201 · 400 · 409 · 429 |
-| `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 429 |
+| `POST /api/auth/login` | No | `correo`, `password` | 200 · 400 · 401 · 403 · 429 |
+| `POST /api/auth/verificar-correo` | No | `token` | 200 · 400 · 429 |
+| `POST /api/auth/reenviar-verificacion` | No | `correo` | 202 · 400 · 429 |
 | `GET /api/auth/me` | Bearer (cualquier rol) | — | 200 · 401 |
 
+**Verificación de correo** (alumno y vendedor). Registrarse ya **no inicia sesión**: llega un correo con un enlace
+y hasta abrirlo el login responde **403** "Verifica tu correo…".
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend
+    participant A as API
+    participant C as Correo del usuario
+    F->>A: POST /registro (o /registro-cafeteria)
+    A-->>C: correo con https://<front>/verificar-correo?token=...
+    A-->>F: 201 { correo, correoEnviado: true, mensaje }
+    C->>F: el usuario abre el enlace
+    F->>A: POST /verificar-correo { token }
+    A-->>F: 200 { usuarioId, rol, token, expiraEn }  (ya con sesión)
+```
+
+- El enlace **vence en 24 horas** y **sirve una sola vez**. Pedir otro (`/reenviar-verificacion`) anula el anterior.
+- En la BD solo se guarda el **SHA-256** del token; la bitácora no lo registra.
+- `/reenviar-verificacion` responde **202 siempre**, exista o no la cuenta, para no revelar qué correos están
+  registrados. El 403 del login solo sale si la contraseña es correcta.
+- Si el servidor de correo falla, la cuenta **sí se crea** y el registro responde `correoEnviado: false`: el front
+  debe ofrecer "Reenviar correo".
+- Las cuentas que ya existían antes de este cambio quedaron verificadas.
+- **El frontend necesita la página** `/verificar-correo` que lea `?token=` y llame a `POST /api/auth/verificar-correo`.
+  Su URL se configura en `Correo__UrlVerificacion`.
+
+Configuración (SMTP, cualquier proveedor):
+
+| Variable | Ejemplo |
+|---|---|
+| `Correo__Host` | `smtp.gmail.com` |
+| `Correo__Puerto` | `587` (STARTTLS) o `465` (TLS) |
+| `Correo__Usuario` / `Correo__Password` | Cuenta y contraseña de aplicación (no la contraseña normal) |
+| `Correo__Remitente` | `no-responder@tu-dominio` (vacío = el usuario) |
+| `Correo__UrlVerificacion` | `https://<front>/verificar-correo` |
+
+Para probar en local sin mandar correos reales sirve Mailtrap o smtp4dev.
+
 **Registro de negocio** (TEC-11): un dueño crea su cuenta y su cafetería en un solo paso. El usuario nace
-`AdminCafeteria` y encargado de esa cafetería, y recibe su token como en `/registro`. Todo ocurre en una transacción
+`AdminCafeteria` y encargado de esa cafetería, y recibe el correo de verificación como en `/registro`. Todo ocurre en una transacción
 (`sp_autorregistrar_cafeteria`): si el correo o el nombre de la cafetería ya existen (este sin distinguir
 mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nada creado a medias. Es distinto de
 `POST /api/cafeterias`, donde el `AdminSistema` da de alta una cafetería sin encargado.
@@ -319,7 +404,7 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
   "puntoEntrega": "Ventanilla 2", "metodosPago": ["Efectivo", "Tarjeta"] }
 ```
 
-**Registro**: crea siempre un `Alumno` y ya devuelve el token, así que el front puede entrar directo sin pedir login.
+**Registro**: crea siempre un `Alumno` y manda el correo de verificación (no devuelve token).
 
 ```json
 // POST /api/auth/registro
@@ -327,7 +412,14 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
   "matricula": "23300099", "telefono": "7711234567" }
 ```
 
-**Respuesta de registro (201) y login (200)**:
+**Respuesta de los dos registros (201)**:
+
+```json
+{ "correo": "ana@uttt.edu.mx", "correoEnviado": true,
+  "mensaje": "Te enviamos un correo para verificar tu cuenta. Abre el enlace para poder iniciar sesión." }
+```
+
+**Respuesta de login y de verificar-correo (200)**:
 
 ```json
 { "usuarioId": "1ffc232e-0d4d-4206-9362-87a949b4342a", "correo": "ana@uttt.edu.mx",
@@ -339,12 +431,28 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
 | Código | Cuándo | Qué mostrar en el front |
 |---|---|---|
 | 400 | Datos inválidos | El mensaje de cada campo en `errors` (ya vienen en español) |
+| 400 | Verificar correo: enlace inválido, ya usado o vencido | El `detail` y la opción de reenviar el correo |
 | 401 | Login: correo o contraseña incorrectos · `/me`: sin token o token vencido | Login: el `detail`. Ruta protegida: mandar al login |
+| 403 | Login: la contraseña es correcta pero falta verificar el correo | El `detail` y un botón "Reenviar correo" |
 | 409 | Correo o matrícula ya registrados | El `detail` |
 | 429 | Demasiados intentos desde la misma IP (20 por minuto por defecto) | El `detail`; el encabezado `Retry-After` indica los segundos de espera |
 
 Reglas de registro: nombre de 2 a 80 caracteres, correo válido de máximo 120, contraseña de 8 a 72,
 matrícula de máximo 20 y teléfono de 10 a 15 dígitos (los dos últimos son opcionales).
+
+## Cifrado en tránsito (TLS)
+Todo lo que sale a internet va cifrado; sin cifrar solo se permite dentro de la red local de desarrollo (`localhost`,
+IPs privadas de Docker/WSL y nombres sin punto como `postgres` en docker-compose):
+
+| Tramo | Cómo se garantiza |
+|---|---|
+| Navegador → API | Redirección a https y **HSTS de un año** fuera de Development. En Azure activa también *HTTPS Only* en el App Service |
+| API → PostgreSQL | A una BD remota se conecta con `SSL Mode=Require` aunque la cadena no lo diga |
+| API → servidor de correo | STARTTLS obligatorio (o TLS directo en el puerto 465) |
+| Enlace del correo de verificación | `Correo__UrlVerificacion` debe ser `https://` (si no, no se envía) |
+| URLs de imágenes guardadas | Solo `https://` (la PWA bloquea imágenes http); `http://localhost` o `127.0.0.1` solo para Azurite |
+
+Las reglas están en `src/CampusBite.Infrastructure/Seguridad/Tls.cs`.
 
 ## Conexiones a la base de datos (local y producción)
 

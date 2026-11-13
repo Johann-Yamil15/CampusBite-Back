@@ -49,16 +49,18 @@ public class ProductoRepository : IProductoRepository
 
     // JJ-Sprint4 27/10/2026: TEC-09. CRUD completo de productos y categorías
 
-    public async Task<IReadOnlyList<ProductoDto>> ListarAsync(
-        Guid idCafeteria, Guid idActor, CancellationToken cancellationToken = default)
-    {
-        var json = await _context.EjecutarAsync(
-            "CALL sp_listar_productos_cafeteria(@cafeteria, @actor, NULL)",
-            [Id("cafeteria", idCafeteria), Id("actor", idActor)],
-            fila => fila.GetString(0),
+    // JY-Sprint4 05/11/2026: paginado (el SP devuelve el total y la página)
+    public Task<(int Total, IReadOnlyList<ProductoDto> Items)> ListarAsync(
+        Guid idCafeteria, Guid idActor, string? buscar, Guid? idCategoria, int limite, int desplazamiento,
+        CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync<(int, IReadOnlyList<ProductoDto>)>(
+            "CALL sp_listar_productos_cafeteria(@cafeteria, @actor, @buscar, @categoria, @limite, @desplazamiento, NULL, NULL)",
+            [
+                Id("cafeteria", idCafeteria), Id("actor", idActor), Texto("buscar", buscar),
+                IdOpcional("categoria", idCategoria), Entero("limite", limite), Entero("desplazamiento", desplazamiento)
+            ],
+            fila => (fila.GetInt32(0), fila.LeerJson<List<ProductoDto>>(1) ?? []),
             cancellationToken);
-        return JsonSerializer.Deserialize<List<ProductoDto>>(json, Json) ?? [];
-    }
 
     public Task ActualizarAsync(
         Guid idProducto, Guid idActor, DatosProducto datos, CancellationToken cancellationToken = default) =>
