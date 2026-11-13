@@ -126,7 +126,7 @@ public class AuthController : ControllerBase
         return Ok(new MeDto
         {
             Id = _usuarioActual.Id,
-            Correo = User.FindFirst(JwtRegisteredClaimNames.Email)?.Value ?? string.Empty,
+            Correo = User.FindFirst(JwtRegisteredClaimNames.Email)?.Value,
             Rol = _usuarioActual.Rol.ToString(),
             Nombre = User.FindFirst(TokenService.ClaimNombre)?.Value ?? string.Empty,
             IdCafeteria = Guid.TryParse(User.FindFirst(TokenService.ClaimIdCafeteria)?.Value, out var caf) ? caf : null
