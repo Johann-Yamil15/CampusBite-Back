@@ -240,8 +240,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read             # solo para el checkout
+    # PostgreSQL desechable para las pruebas de Infrastructure (tests/CampusBite.Api.Tests/Postgres): vive solo
+    # mientras dura este job, sin datos ni conexión a Neon/Azure. Las pruebas crean su propia base temporal, le cargan
+    # el consolidado local más reciente y la borran. Sin contraseña (trust): solo se alcanza desde este runner.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          TZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       PROYECTO: CampusBite.Api.Tests
+      CAMPUSBITE_PRUEBAS_PG: "Host=localhost;Port=5432;Username=postgres;Database=postgres"
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -289,6 +306,32 @@ jobs:
               print(f"\n### ❌ Pruebas fallidas ({len(fallidas)})")
               for nombre, msg in fallidas:
                   print(f"- `{nombre}`: {msg}")
+          PY
+
+      # Las pruebas de PostgreSQL se OMITEN (no aprueban) si no hay servidor. En CI son obligatorias: si alguna no
+      # corrió, o no hay ninguna, el job falla aunque las demás pasen. Las omitidas a propósito por un defecto
+      # documentado (Skip con "Defecto") no son de PostgreSQL y no cuentan aquí.
+      - name: 🐘 Exigir que corrieran las pruebas de PostgreSQL
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - "TestResults/$PROYECTO.trx" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import os, sys, xml.etree.ElementTree as ET
+          ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          if not os.path.exists(sys.argv[1]):
+              print("> ❌ No hay resultados (.trx): no se puede comprobar PostgreSQL."); sys.exit(1)
+          raiz = ET.parse(sys.argv[1]).getroot()
+          clase_de = {u.get("id"): u.find("t:TestMethod", ns).get("className")
+                      for u in raiz.iterfind("t:TestDefinitions/t:UnitTest", ns)}
+          de_pg = [r for r in raiz.iterfind("t:Results/t:UnitTestResult", ns)
+                   if ".Postgres." in clase_de.get(r.get("testId"), "")]
+          corrieron = sum(r.get("outcome") in ("Passed", "Failed") for r in de_pg)
+          omitidas = [r.get("testName") for r in de_pg if r.get("outcome") not in ("Passed", "Failed")]
+          print(f"## 🐘 PostgreSQL de pruebas: {corrieron} ejecutadas, {len(omitidas)} omitidas")
+          if corrieron == 0 or omitidas:
+              for nombre in omitidas[:20]:
+                  print(f"- ⏭️ `{nombre}`")
+              print("\n> ❌ Las pruebas de PostgreSQL son obligatorias en CI (revisa el servicio postgres y CAMPUSBITE_PRUEBAS_PG).")
+              sys.exit(1)
           PY
 
       # También si fallaron pruebas: Cobertura y Análisis los usan y el workflow queda en rojo igual
@@ -405,6 +448,8 @@ jobs:
       # El token llega por variable de entorno (no se interpola en el script) y GitHub lo enmascara en el log.
       # Exclusiones: bin/obj y los scripts SQL consolidados de db/consolidado/versiones, que son copias generadas
       # de db/scripts (los scripts fuente sí se analizan). Las pruebas no cuentan para la cobertura.
+      # db/tests/** (smoke_test.sql, cargar_productos_api.py...) son pruebas, no producción: se clasifican como tales
+      # con sonar.test.inclusions (no se excluyen del análisis; solo dejan de contar como líneas a cubrir).
       # skipJreProvisioning: usa el Java 21 del paso anterior en lugar de descargar otro en cada análisis.
       - name: 🔍 Iniciar análisis
         env:
@@ -422,6 +467,7 @@ jobs:
           /d:sonar.cs.vstest.reportsPaths="TestResults/*.trx"
           /d:sonar.exclusions="**/bin/**,**/obj/**,db/consolidado/versiones/**"
           /d:sonar.coverage.exclusions="tests/**,**/Program.cs"
+          /d:sonar.test.inclusions="db/tests/**"
 
       - name: 🏗️ Compilar para el análisis
         run: dotnet build CampusBite-Back.sln --configuration Release
