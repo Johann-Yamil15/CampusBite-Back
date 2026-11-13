@@ -40,6 +40,16 @@ internal class FakeUsuarioRepository : IUsuarioRepository
     // JJ-Sprint3 21/10/2026: TEC-12
     public (string Correo, string Hash)? UltimoRestablecimiento { get; private set; }
 
+    // JJ-Sprint5 13/11/2026
+    public Task<CredencialesUsuario?> ObtenerPorIdAsync(Guid idUsuario, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Usuarios.Values.FirstOrDefault(u => u.IdUsuario == idUsuario));
+
+    public Task CambiarPasswordAsync(Guid idUsuario, string contrasenaHash, CancellationToken cancellationToken = default)
+    {
+        foreach (var u in Usuarios.Values.Where(u => u.IdUsuario == idUsuario)) u.ContrasenaHash = contrasenaHash;
+        return Task.CompletedTask;
+    }
+
     public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default)
     {
         UltimoRestablecimiento = (correo, contrasenaHash);
@@ -149,6 +159,7 @@ internal class FakePasswordHasher : IPasswordHasher
 
 internal class FakeTokenService : ITokenService
 {
-    public (string Token, DateTime ExpiraEn) GenerarToken(Guid idUsuario, string correo, RolUsuario rol)
+    public (string Token, DateTime ExpiraEn) GenerarToken(Guid idUsuario, string correo, RolUsuario rol,
+        string? nombre = null, Guid? idCafeteria = null)
         => ($"token:{idUsuario}:{rol}", new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 }

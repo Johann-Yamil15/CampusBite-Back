@@ -144,6 +144,41 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="scripts/03_cambios_sprint5/001_tipos_sprint5.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/001_tipos_sprint5.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint5/002_columnas_orden_cafeteria_producto.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/002_columnas_orden_cafeteria_producto.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint5/003_cierre_cafeteria.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/003_cierre_cafeteria.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint5/004_promocion.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/004_promocion.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint5/005_favoritos.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/005_favoritos.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint5/006_preferencia_alumno.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/006_preferencia_alumno.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/03_cambios_sprint5/007_reporte_orden.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/03_cambios_sprint5/007_reporte_orden.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
     <changeSet id="scripts/04_triggers/001_actualizado_en.sql" author="campusbite" runOnChange="true">
         <sqlFile path="scripts/04_triggers/001_actualizado_en.sql" splitStatements="false" stripComments="false"/>
         <rollback/>
@@ -376,6 +411,41 @@
 
     <changeSet id="scripts/06_procedimientos/034_sp_verificar_correo.sql" author="campusbite" runOnChange="true">
         <sqlFile path="scripts/06_procedimientos/034_sp_verificar_correo.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/035_fn_apoyo_sprint5.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/035_fn_apoyo_sprint5.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/036_sp_ordenes_sprint5.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/036_sp_ordenes_sprint5.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/037_sp_usuario_perfil.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/037_sp_usuario_perfil.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/038_sp_favoritos.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/038_sp_favoritos.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/039_sp_horario.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/039_sp_horario.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/040_sp_promociones.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/040_sp_promociones.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="scripts/06_procedimientos/041_sp_reporte_estadisticas.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/06_procedimientos/041_sp_reporte_estadisticas.sql" splitStatements="false" stripComments="false"/>
         <rollback/>
     </changeSet>
 

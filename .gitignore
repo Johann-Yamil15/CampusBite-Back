@@ -41,6 +41,10 @@ secrets.json
 *.pfx
 *.pem
 *.key
+credenciales.local.md
+
+# graphify knowledge graph (local index, no sube al repo)
+graphify-out/
 
 # Sistema operativo
 Thumbs.db
