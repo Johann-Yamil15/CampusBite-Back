@@ -48,7 +48,7 @@ public class UsuarioRepository : IUsuarioRepository
     {
         // Si el correo no existe, todos los OUT regresan NULL
         return _context.EjecutarAsync(
-            "CALL sp_obtener_credenciales(@correo, NULL, NULL, NULL, NULL, NULL)",
+            "CALL sp_obtener_credenciales(@correo, NULL, NULL, NULL, NULL, NULL, NULL, NULL)",
             [Texto("correo", correo)],
             fila => fila.IsDBNull(0)
                 ? null
@@ -58,7 +58,10 @@ public class UsuarioRepository : IUsuarioRepository
                     IdRol = (RolUsuario)fila.GetInt16(1),
                     ContrasenaHash = fila.GetString(2),
                     Activo = fila.GetBoolean(3),
-                    CorreoVerificado = fila.GetBoolean(4)
+                    CorreoVerificado = fila.GetBoolean(4),
+                    Nombre = fila.GetString(5),
+                    IdCafeteria = fila.IsDBNull(6) ? null : fila.GetGuid(6),
+                    Correo = correo
                 },
             cancellationToken);
     }
@@ -100,5 +103,30 @@ public class UsuarioRepository : IUsuarioRepository
              Texto("telefono", telefono), Texto("cafeteria", nombreCafeteria), Texto("ubicacion", ubicacion),
              Logico("campus", esDelCampus), Texto("punto", puntoEntrega), Enumeraciones("metodos", metodos)],
             fila => fila.GetGuid(0),
+            cancellationToken);
+
+    // JJ-Sprint5 13/11/2026: sp_obtener_usuario devuelve todo NULL si el id no existe
+    public Task<CredencialesUsuario?> ObtenerPorIdAsync(Guid idUsuario, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_obtener_usuario(@id, NULL, NULL, NULL, NULL, NULL, NULL)",
+            [Id("id", idUsuario)],
+            fila => fila.IsDBNull(0)
+                ? null
+                : new CredencialesUsuario
+                {
+                    IdUsuario = idUsuario,
+                    Correo = fila.GetString(0),
+                    IdRol = (RolUsuario)fila.GetInt16(1),
+                    Nombre = fila.GetString(2),
+                    IdCafeteria = fila.IsDBNull(3) ? null : fila.GetGuid(3),
+                    ContrasenaHash = fila.GetString(4),
+                    Activo = fila.GetBoolean(5)
+                },
+            cancellationToken);
+
+    public Task CambiarPasswordAsync(Guid idUsuario, string contrasenaHash, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_cambiar_password(@id, @hash)",
+            [Id("id", idUsuario), Texto("hash", contrasenaHash)],
             cancellationToken);
 }

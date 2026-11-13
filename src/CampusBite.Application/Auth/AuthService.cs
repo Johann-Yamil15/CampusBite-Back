@@ -60,7 +60,9 @@ public class AuthService : IAuthService
     {
         var (idUsuario, correo, rol) = await _usuarios.VerificarCorreoAsync(
             TokenVerificacion.Hash(dto.Token.Trim()), cancellationToken);
-        return CrearRespuesta(idUsuario, correo, rol);
+        // JJ-Sprint5 13/11/2026: la respuesta lleva nombre e idCafeteria, como el login
+        var usuario = await _usuarios.ObtenerPorIdAsync(idUsuario, cancellationToken);
+        return CrearRespuesta(idUsuario, correo, rol, usuario?.Nombre ?? string.Empty, usuario?.IdCafeteria);
     }
 
     public async Task ReenviarVerificacionAsync(ReenviarVerificacionRequestDto dto, CancellationToken cancellationToken = default)
@@ -134,20 +136,46 @@ public class AuthService : IAuthService
                 "Verifica tu correo antes de iniciar sesión. Revisa tu bandeja de entrada o pide que te reenviemos el enlace.");
         }
 
-        return CrearRespuesta(credenciales.IdUsuario, correo, credenciales.IdRol);
+        return CrearRespuesta(credenciales.IdUsuario, correo, credenciales.IdRol, credenciales.Nombre, credenciales.IdCafeteria);
+    }
+
+    // JJ-Sprint5 13/11/2026: el front muestra "La contraseña actual no es correcta." en ese campo
+    public async Task CambiarPasswordAsync(Guid idUsuario, CambiarPasswordRequestDto dto, CancellationToken cancellationToken = default)
+    {
+        var usuario = await ObtenerActivoAsync(idUsuario, cancellationToken);
+        if (!_passwordHasher.Verify(dto.PasswordActual, usuario.ContrasenaHash))
+        {
+            throw new BusinessRuleException("La contraseña actual no es correcta.");
+        }
+        if (dto.PasswordNueva == dto.PasswordActual)
+        {
+            throw new BusinessRuleException("La contraseña nueva debe ser distinta de la actual.");
+        }
+
+        await _usuarios.CambiarPasswordAsync(idUsuario, _passwordHasher.Hash(dto.PasswordNueva), cancellationToken);
+    }
+
+    private async Task<CredencialesUsuario> ObtenerActivoAsync(Guid idUsuario, CancellationToken cancellationToken)
+    {
+        var usuario = await _usuarios.ObtenerPorIdAsync(idUsuario, cancellationToken);
+        return usuario is { Activo: true }
+            ? usuario
+            : throw new UnauthorizedException("La sesión no es válida. Inicia sesión de nuevo.");
     }
 
     private static string NormalizarCorreo(string correo) => correo.Trim().ToLowerInvariant();
 
-    private AuthResponseDto CrearRespuesta(Guid idUsuario, string correo, RolUsuario rol)
+    private AuthResponseDto CrearRespuesta(Guid idUsuario, string correo, RolUsuario rol, string nombre, Guid? idCafeteria)
     {
-        var (token, expiraEn) = _tokenService.GenerarToken(idUsuario, correo, rol);
+        var (token, expiraEn) = _tokenService.GenerarToken(idUsuario, correo, rol, nombre, idCafeteria);
 
         return new AuthResponseDto
         {
             UsuarioId = idUsuario,
             Correo = correo,
             Rol = rol.ToString(),
+            Nombre = nombre,
+            IdCafeteria = idCafeteria,
             Token = token,
             ExpiraEn = expiraEn
         };

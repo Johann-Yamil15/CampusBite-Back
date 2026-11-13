@@ -2,6 +2,7 @@ using CampusBite.Api.Common.Settings;
 using CampusBite.Application.Auth;
 using CampusBite.Application.Auth.Dtos;
 using CampusBite.Application.Common.Security;
+using CampusBite.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -115,16 +116,34 @@ public class AuthController : ControllerBase
     // JJ-Sprint1 02/10/2026: endpoint protegido para verificar que el token es válido
     [HttpGet("me")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<MeDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
-    public IActionResult Me()
+    public ActionResult<MeDto> Me()
     {
         // JY-Sprint2 10/10/2026: lee la sesión con IUsuarioActual (MapInboundClaims = false: claims "sub", "email", "role")
-        return Ok(new
+        // JJ-Sprint5 13/11/2026: + nombre e idCafeteria de sus claims (tras editar el perfil, el nombre se actualiza al
+        // volver a iniciar sesión; PUT api/alumnos/me/perfil ya devuelve el nombre nuevo)
+        return Ok(new MeDto
         {
             Id = _usuarioActual.Id,
             Correo = User.FindFirst(JwtRegisteredClaimNames.Email)?.Value,
-            Rol = _usuarioActual.Rol.ToString()
+            Rol = _usuarioActual.Rol.ToString(),
+            Nombre = User.FindFirst(TokenService.ClaimNombre)?.Value ?? string.Empty,
+            IdCafeteria = Guid.TryParse(User.FindFirst(TokenService.ClaimIdCafeteria)?.Value, out var caf) ? caf : null
         });
+    }
+
+    // JJ-Sprint5 13/11/2026: cambiar contraseña con la sesión iniciada (cualquier rol)
+    [HttpPost("cambiar-password")]
+    [Authorize]
+    [EnableRateLimiting(RateLimitSettings.PoliticaAuth)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> CambiarPassword([FromBody] CambiarPasswordRequestDto dto, CancellationToken cancellationToken)
+    {
+        await _authService.CambiarPasswordAsync(_usuarioActual.Id, dto, cancellationToken);
+        return NoContent();
     }
 }
