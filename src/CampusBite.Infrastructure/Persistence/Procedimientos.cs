@@ -83,6 +83,23 @@ public static class Procedimientos
             Value = valores.Select(v => JsonNamingPolicy.SnakeCaseLower.ConvertName(v.ToString())).ToArray()
         };
 
+    // JJ-Sprint5 13/11/2026: un ENUM (se manda como texto y en el SQL se convierte, p. ej. @metodo::metodo_pago)
+    public static NpgsqlParameter Enumeracion<TEnum>(string nombre, TEnum? valor) where TEnum : struct, Enum =>
+        new(nombre, NpgsqlDbType.Text)
+        {
+            Value = valor is { } v ? JsonNamingPolicy.SnakeCaseLower.ConvertName(v.ToString()) : DBNull.Value
+        };
+
+    // JJ-Sprint5 13/11/2026: objeto o lista como JSONB con claves snake_case (como los lee el procedimiento)
+    public static NpgsqlParameter Jsonb(string nombre, object valor) =>
+        new(nombre, NpgsqlDbType.Jsonb) { Value = JsonSerializer.Serialize(valor, Json) };
+
+    public static NpgsqlParameter Fecha(string nombre, DateOnly? valor) =>
+        new(nombre, NpgsqlDbType.Date) { Value = (object?)valor ?? DBNull.Value };
+
+    public static NpgsqlParameter Instante(string nombre, DateTimeOffset valor) =>
+        new(nombre, NpgsqlDbType.TimestampTz) { Value = valor.UtcDateTime };
+
     // Los procedimientos lanzan sus errores de negocio con un SQLSTATE y un mensaje en español pensado para el
     // usuario (RAISE EXCEPTION ... USING ERRCODE). Los errores internos de PostgreSQL (CHECK, FK) no se muestran
     // tal cual: su texto trae nombres de tablas y restricciones.
