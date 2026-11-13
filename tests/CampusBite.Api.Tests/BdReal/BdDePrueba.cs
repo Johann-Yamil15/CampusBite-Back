@@ -110,7 +110,9 @@ public sealed class ApiConBd(string conexion) : ApiDePrueba
     }
 }
 
-[CollectionDefinition(Nombre)]
+// JJ-Sprint5 13/11/2026: sin paralelismo con las demás colecciones. En CI comparte el servidor con
+// Postgres/PostgresDePrueba y las dos cargan el consolidado (ALTER ROLE app_backend, GRANT): a la vez pueden chocar.
+[CollectionDefinition(Nombre, DisableParallelization = true)]
 public sealed class ColeccionBdReal : ICollectionFixture<BdDePrueba>
 {
     public const string Nombre = "BD real";
