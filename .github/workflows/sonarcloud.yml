@@ -24,9 +24,8 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pull-requests: read
+# Sin permisos a nivel de workflow (regla githubactions:S8264): cada job pide solo lo que usa
+permissions: {}
 
 # Si llegan dos push seguidos a la misma rama o PR, solo sigue el último
 concurrency:
@@ -44,6 +43,7 @@ jobs:
   configuracion:
     name: ✅ Configuración
     runs-on: ubuntu-latest
+    permissions: {}                # no usa el token de GitHub
     # Los PR que vienen de un fork no reciben secretos: se omiten en lugar de fallar
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -82,6 +82,8 @@ jobs:
     name: 📦 Restauración
     needs: configuracion
     runs-on: ubuntu-latest
+    permissions:
+      contents: read             # solo para el checkout
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -123,6 +125,8 @@ jobs:
     name: 🏗️ Compilación
     needs: restaurar
     runs-on: ubuntu-latest
+    permissions:
+      contents: read             # solo para el checkout
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -167,6 +171,8 @@ jobs:
     name: 🧪 Pruebas Application
     needs: compilar
     runs-on: ubuntu-latest
+    permissions:
+      contents: read             # solo para el checkout
     env:
       PROYECTO: CampusBite.Application.Tests
     steps:
@@ -232,6 +238,8 @@ jobs:
     name: 🧪 Pruebas Api
     needs: compilar
     runs-on: ubuntu-latest
+    permissions:
+      contents: read             # solo para el checkout
     env:
       PROYECTO: CampusBite.Api.Tests
     steps:
@@ -300,6 +308,7 @@ jobs:
     # Corre aunque fallen pruebas (si hay resultados), para que se vea cuánto quedó cubierto
     if: ${{ !cancelled() && needs.pruebas_application.result != 'skipped' && needs.pruebas_api.result != 'skipped' }}
     runs-on: ubuntu-latest
+    permissions: {}                # no usa el token de GitHub
     steps:
       - name: 📥 Traer resultados de los dos proyectos de prueba
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -353,6 +362,8 @@ jobs:
     needs: cobertura
     if: ${{ !cancelled() && needs.cobertura.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read             # solo para el checkout
     outputs:
       tarea: ${{ steps.publicar.outputs.tarea }}
       panel: ${{ steps.publicar.outputs.panel }}
@@ -443,6 +454,7 @@ jobs:
     needs: sonar
     if: ${{ !cancelled() && needs.sonar.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions: {}                # no usa el token de GitHub
     steps:
       - name: 🚦 Esperar y revisar el resultado
         env:
