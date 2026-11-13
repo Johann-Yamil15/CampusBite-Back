@@ -21,4 +21,7 @@ public interface IAuthService
     Task RestablecerPasswordAsync(RestablecerPasswordRequestDto dto, CancellationToken cancellationToken = default);
 
     Task<AuthResponseDto> LoginAsync(LoginRequestDto dto, CancellationToken cancellationToken = default);
+
+    // JJ-Sprint5 13/11/2026: cambio de contraseña con la actual
+    Task CambiarPasswordAsync(Guid idUsuario, CambiarPasswordRequestDto dto, CancellationToken cancellationToken = default);
 }
