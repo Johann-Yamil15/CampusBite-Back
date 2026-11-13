@@ -4,8 +4,13 @@
 #   - SonarCloud: proyecto Johann-Yamil15_CampusBite-Back con "Automatic Analysis" apagado (C# se analiza por CI).
 #   - GitHub > Settings > Secrets and variables > Actions:
 #       secreto   SONAR_TOKEN
-#       variables SONAR_ORGANIZATION (johann-yamil15) y SONAR_PROJECT_KEY (Johann-Yamil15_CampusBite-Back)
+#       variables SONAR_ORGANIZATION (johann-yamil15, en minúsculas) y SONAR_PROJECT_KEY (Johann-Yamil15_CampusBite-Back)
 # Las acciones van fijadas por SHA (regla githubactions:S7637); el comentario dice a qué versión corresponde.
+#
+# JY-Sprint4 12/11/2026: un job por tarea, para ver cada una por separado en GitHub:
+#   Configuración -> Compilación -> Pruebas y cobertura -> Análisis SonarCloud
+# El escáner de .NET necesita compilar entre "begin" y "end" en la misma máquina, así que el job de análisis vuelve a
+# compilar; la cobertura y los resultados de pruebas le llegan del job de pruebas como artefacto.
 name: 🔍 SonarCloud
 
 on:
@@ -19,7 +24,7 @@ permissions:
   contents: read
   pull-requests: read
 
-# Si llegan dos push seguidos a la misma rama o PR, solo sigue el último análisis
+# Si llegan dos push seguidos a la misma rama o PR, solo sigue el último
 concurrency:
   group: sonarcloud-${{ github.ref }}
   cancel-in-progress: true
@@ -31,14 +36,13 @@ env:
   DOTNET_NOLOGO: "1"
 
 jobs:
-  sonar:
-    name: 🔍 Análisis, pruebas y cobertura
+  configuracion:
+    name: ✅ Configuración
     runs-on: ubuntu-latest
     # Los PR que vienen de un fork no reciben secretos: se omiten en lugar de fallar
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-
     steps:
-      - name: ✅ Revisar configuración
+      - name: ✅ Revisar secretos y variables
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
@@ -53,6 +57,62 @@ jobs:
             exit 1
           fi
 
+  compilar:
+    name: 🏗️ Compilación
+    needs: configuracion
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: 🟣 Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 🏗️ Compilar
+        run: dotnet build CampusBite-Back.sln --configuration Release
+
+  pruebas:
+    name: 🧪 Pruebas y cobertura
+    needs: compilar
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: 🟣 Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Corre las pruebas de Application y Api (las de la solución). coverlet.collector ya está en los dos proyectos
+      # de prueba y escribe la cobertura en formato OpenCover; el .trx son los resultados de cada prueba.
+      - name: 🧪 Pruebas con cobertura
+        run: >-
+          dotnet test CampusBite-Back.sln
+          --configuration Release
+          --results-directory TestResults
+          --logger trx
+          --collect:"XPlat Code Coverage;Format=opencover"
+
+      # También se sube si fallaron pruebas: el análisis las muestra y el workflow queda en rojo igual
+      - name: 📤 Guardar resultados y cobertura
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: resultados-pruebas
+          path: TestResults/
+          retention-days: 7
+          if-no-files-found: error
+
+  sonar:
+    name: 🔍 Análisis SonarCloud
+    needs: pruebas
+    # Analiza aunque fallen pruebas (siempre que haya resultados), para que el PR reciba el reporte
+    if: ${{ !cancelled() && needs.pruebas.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
       - name: 📥 Checkout (historial completo, para blame y código nuevo)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -76,12 +136,19 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
+      - name: 📥 Traer resultados y cobertura
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: resultados-pruebas
+          path: TestResults
+
       - name: 🧰 Instalar escáner ${{ env.SONARSCANNER_VERSION }}
         run: dotnet tool install --global dotnet-sonarscanner --version "$SONARSCANNER_VERSION"
 
       # El token llega por variable de entorno (no se interpola en el script) y GitHub lo enmascara en el log.
       # Exclusiones: bin/obj y los scripts SQL consolidados de db/consolidado/versiones, que son copias generadas
       # de db/scripts (los scripts fuente sí se analizan). Las pruebas no cuentan para la cobertura.
+      # skipJreProvisioning: usa el Java 17 del paso anterior en lugar de descargar otro en cada análisis.
       - name: 🔍 Iniciar análisis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -93,30 +160,16 @@ jobs:
           /o:"$SONAR_ORGANIZATION"
           /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.scanner.skipJreProvisioning=true
           /d:sonar.cs.opencover.reportsPaths="TestResults/*/coverage.opencover.xml"
           /d:sonar.cs.vstest.reportsPaths="TestResults/*.trx"
           /d:sonar.exclusions="**/bin/**,**/obj/**,db/consolidado/versiones/**"
           /d:sonar.coverage.exclusions="tests/**,**/Program.cs"
 
-      - name: 🏗️ Compilar
-        id: compilar
+      - name: 🏗️ Compilar para el análisis
         run: dotnet build CampusBite-Back.sln --configuration Release
 
-      # Corre las pruebas de Application y Api (las de la solución). coverlet.collector ya está en los dos proyectos
-      # de prueba y escribe la cobertura en formato OpenCover; el .trx son los resultados de cada prueba.
-      - name: 🧪 Pruebas con cobertura
-        run: >-
-          dotnet test CampusBite-Back.sln
-          --configuration Release
-          --no-build
-          --results-directory TestResults
-          --logger trx
-          --collect:"XPlat Code Coverage;Format=opencover"
-
-      # También publica si fallan las pruebas (el PR recibe el análisis y el job queda en rojo igual), pero no si no
-      # compiló: sin compilación no hay nada que analizar
       - name: 📤 Publicar análisis en SonarCloud
-        if: ${{ !cancelled() && steps.compilar.outcome == 'success' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
