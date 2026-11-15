@@ -467,6 +467,9 @@ jobs:
           /d:sonar.cs.vstest.reportsPaths="TestResults/*.trx"
           /d:sonar.exclusions="**/bin/**,**/obj/**,db/consolidado/versiones/**"
           /d:sonar.coverage.exclusions="tests/**,**/Program.cs"
+          # Duplicación aceptada: los DTOs repiten a propósito sus reglas de validación (cada uno es un contrato distinto) y
+          # los scripts de db/scripts son historia ya aplicada en Neon, que no se debe reescribir
+          /d:sonar.cpd.exclusions="**/Dtos/**,db/scripts/**"
           /d:sonar.test.inclusions="db/tests/**"
 
       - name: 🏗️ Compilar para el análisis

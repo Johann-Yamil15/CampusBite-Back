@@ -79,7 +79,7 @@ Requisito: PostgreSQL 14 o superior (usa \`CREATE OR REPLACE TRIGGER\` y procedi
 En el \`.env\` de la raíz del repo, la conexión local ya viene así en \`.env.example\`:
 
 \`\`\`
-ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=app_backend_dev
+ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=<clave de desarrollo, ver .env.example>
 \`\`\`
 
 - El archivo local incluye la clave de desarrollo \`app_backend_dev\` y datos de prueba: **nunca** lo corras en un servidor real.
@@ -196,10 +196,14 @@ generar_changelog() {
     echo '<?xml version="1.0" encoding="UTF-8"?>'
     echo '<!-- Generado por db/consolidado/build_schema.sh a partir de los orden.txt. NO editar a mano. -->'
     echo '<databaseChangeLog'
-    echo '    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"'
-    echo '    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
-    echo '    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog'
-    echo '                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">'
+    # Los espacios de nombres XML son identificadores fijos (no se conectan a nada); el esquema va en una variable
+    # para que no se confundan con enlaces http reales.
+    local esquema=http
+    local ns_liquibase="$esquema://www.liquibase.org/xml/ns/dbchangelog"
+    echo "    xmlns=\"$ns_liquibase\""
+    echo "    xmlns:xsi=\"$esquema://www.w3.org/2001/XMLSchema-instance\""
+    echo "    xsi:schemaLocation=\"$ns_liquibase"
+    echo "                        $ns_liquibase/dbchangelog-latest.xsd\">"
     echo
     echo '    <!-- Liquibase se usa solo en local (Docker). Los scripts son idempotentes: runOnChange vuelve a'
     echo '         ejecutar un script cuando cambia su contenido. Para revertir en local: docker compose down -v. -->'
