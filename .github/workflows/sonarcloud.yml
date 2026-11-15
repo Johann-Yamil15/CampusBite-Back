@@ -1,0 +1,65 @@
+# JY-Sprint4 12/11/2026: AUD-010. Análisis de calidad y seguridad (SAST) con SonarQube Cloud (SonarCloud).
+# Corre en cada PR y en cada push a develop y main; no despliega nada (eso es deploy-backend.yml).
+# Requisitos (una sola vez, en sonarcloud.io y en GitHub):
+#   - Proyecto importado en SonarCloud con "Automatic Analysis" APAGADO (para C# el análisis va por CI).
+#   - Secreto del repo SONAR_TOKEN y variables del repo SONAR_ORGANIZATION y SONAR_PROJECT_KEY.
+name: 🔍 SonarCloud
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  DOTNET_VERSION: "9.0.x"
+
+jobs:
+  sonar:
+    name: 🔍 Análisis
+    runs-on: ubuntu-latest
+    # Los PR que vienen de un fork no tienen acceso a los secretos: se omiten en lugar de fallar
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: 📥 Checkout (historial completo, para blame y código nuevo)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: 🟣 Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: ☕ Java 17 (lo necesita el escáner)
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 🧰 Instalar escáner y cobertura
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet tool install --global dotnet-coverage
+
+      - name: 🔍 Compilar, probar y analizar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet-sonarscanner begin \
+            /k:"${{ vars.SONAR_PROJECT_KEY }}" \
+            /o:"${{ vars.SONAR_ORGANIZATION }}" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml \
+            /d:sonar.exclusions="**/bin/**,**/obj/**,db/consolidado/versiones/**" \
+            /d:sonar.coverage.exclusions="tests/**,**/Program.cs,**/Migrations/**"
+          dotnet build CampusBite-Back.sln --configuration Release
+          dotnet-coverage collect "dotnet test CampusBite-Back.sln --configuration Release --no-build" -f xml -o coverage.xml
+          dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"

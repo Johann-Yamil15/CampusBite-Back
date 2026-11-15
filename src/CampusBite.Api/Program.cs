@@ -109,7 +109,7 @@ app.UseRequestTimeouts();
 
 app.MapControllers();
 
-app.Run();
+await app.RunAsync();
 
 // JY-Sprint2 10/10/2026: expone Program para las pruebas de integración (WebApplicationFactory)
 public partial class Program;
