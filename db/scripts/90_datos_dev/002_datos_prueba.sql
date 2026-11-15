@@ -1,10 +1,14 @@
 -- JY-Sprint2 09/10/2026: datos de prueba (SOLO desarrollo, nunca producción). Se puede ejecutar varias veces.
 -- Los hashes son marcadores: no sirven para iniciar sesión. El backend genera hashes reales (BCrypt).
 -- Orden: primero la cafetería, porque el encargado apunta a ella (usuario.id_cafeteria).
+-- JJ-Sprint5 15/11/2026: sin las 5 categorías base del trigger: la cafetería de prueba conserva solo sus categorías
+-- de id fijo (d1, d2), de las que dependen las pruebas
+ALTER TABLE cafeteria DISABLE TRIGGER trg_cafeteria_categorias_base;
 INSERT INTO cafeteria (id_cafeteria, nombre, ubicacion, es_del_campus, punto_entrega) VALUES
   ('00000000-0000-0000-0000-0000000000c1',
    'Cafetería Central (prueba)', 'Edificio principal, planta baja', true, 'Puerta 1')
 ON CONFLICT (id_cafeteria) DO NOTHING;
+ALTER TABLE cafeteria ENABLE TRIGGER trg_cafeteria_categorias_base;
 
 INSERT INTO cafeteria_metodo_pago (id_cafeteria, metodo) VALUES
   ('00000000-0000-0000-0000-0000000000c1', 'efectivo'),
