@@ -50,9 +50,19 @@ public sealed class PostgresDePrueba : IAsyncLifetime
         Consolidado = ConsolidadoMasReciente();
         // El consolidado trae comandos de psql (\set, \echo) que Npgsql no entiende: se quitan
         var sql = string.Join('\n', File.ReadLines(Consolidado).Where(l => !l.StartsWith('\\')));
-        await using var bd = new NpgsqlConnection(Conexion);
-        await bd.OpenAsync();
-        await new NpgsqlCommand(sql, bd) { CommandTimeout = 300 }.ExecuteNonQueryAsync();
+        // El consolidado crea roles y permisos (objetos de todo el servidor): dos cargas a la vez fallan con
+        // "tuple concurrently updated". Todas las bases temporales de las pruebas las cargan una por una.
+        await CargaDelConsolidado.Candado.WaitAsync();
+        try
+        {
+            await using var bd = new NpgsqlConnection(Conexion);
+            await bd.OpenAsync();
+            await new NpgsqlCommand(sql, bd) { CommandTimeout = 300 }.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            CargaDelConsolidado.Candado.Release();
+        }
     }
 
     public async Task DisposeAsync()
@@ -106,6 +116,11 @@ public sealed class PostgresDePrueba : IAsyncLifetime
             .OrderBy(f => Version.Parse(Path.GetFileNameWithoutExtension(f)["campusbite_V".Length..]))
             .Last();
     }
+}
+
+public static class CargaDelConsolidado
+{
+    public static readonly SemaphoreSlim Candado = new(1, 1);
 }
 
 [CollectionDefinition(Nombre)]

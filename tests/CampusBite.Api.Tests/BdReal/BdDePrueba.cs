@@ -51,10 +51,16 @@ public sealed class BdDePrueba : IAsyncLifetime
 
         // El consolidado trae comandos de psql (\set, \echo) que Npgsql no entiende: se quitan
         var sql = string.Join('\n', File.ReadLines(ConsolidadoMasReciente()).Where(l => !l.StartsWith('\\')));
-        await using (var bd = new NpgsqlConnection(Conexion))
+        await Postgres.CargaDelConsolidado.Candado.WaitAsync();      // una carga del consolidado a la vez (roles globales)
+        try
         {
+            await using var bd = new NpgsqlConnection(Conexion);
             await bd.OpenAsync();
             await new NpgsqlCommand(sql, bd) { CommandTimeout = 300 }.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            Postgres.CargaDelConsolidado.Candado.Release();
         }
 
         Api = new ApiConBd(Conexion);

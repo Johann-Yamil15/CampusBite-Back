@@ -7,7 +7,7 @@ public class CorsSettings
     public const string SectionName = "Cors";
     public const string PolicyName = "CampusBiteCors";
 
-    // Separados por coma. Vacío = cualquier origen
+    // Separados por coma. Vacío = ningún origen (el navegador bloquea al front)
     public string AllowedOrigins { get; set; } = string.Empty;
 
     // El navegador manda el origen sin "/" final; se quita por si alguien la copia con la URL

@@ -10,3 +10,5 @@
 006_cafeteria_inmutable.sql
 007_validar_monto_pago.sql
 008_bitacora.sql
+# JJ-Sprint5 15/11/2026: categorías base al crear una cafetería
+009_categorias_base.sql

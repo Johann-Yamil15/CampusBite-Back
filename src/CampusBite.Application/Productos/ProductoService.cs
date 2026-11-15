@@ -61,9 +61,16 @@ public class ProductoService : IProductoService
         var idActor = _usuario.Id;
         var url = await SubirAsync(idProducto, archivo, cancellationToken);
 
-        string? anterior = null;
-        await GuardarOBorrarAsync(url,
-            async () => anterior = await _productos.ActualizarImagenAsync(idCafeteria, idProducto, idActor, url, cancellationToken));
+        string? anterior;
+        try
+        {
+            anterior = await _productos.ActualizarImagenAsync(idCafeteria, idProducto, idActor, url, cancellationToken);
+        }
+        catch
+        {
+            await EliminarSinFallarAsync(url, "la BD rechazó el guardado");
+            throw;
+        }
 
         if (anterior is not null && anterior != url)
         {

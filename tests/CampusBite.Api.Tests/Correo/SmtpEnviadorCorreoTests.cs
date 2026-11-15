@@ -217,6 +217,54 @@ public class SmtpEnviadorCorreoTests : IClassFixture<ApiDePrueba>
         Assert.Equal(2, smtp.Mensajes.Count);
     }
 
+    // ---- Recuperación de contraseña (AUD-001) -----------------------------------------------------------------------
+    private const string UrlRecuperacion = "http://localhost:5173/restablecer-password";
+
+    [Fact]
+    public async Task Recuperacion_manda_el_enlace_de_restablecer_con_el_token_escapado_y_el_nombre_sin_HTML()
+    {
+        await using var smtp = new ServidorSmtpDePrueba();
+        var (enviador, log) = Crear(smtp.Puerto, new() { ["Correo:UrlRecuperacion"] = UrlRecuperacion });
+
+        await enviador.EnviarRecuperacionAsync("ana@uttt.edu.mx", "Ana <b>López</b>", "a b/c");
+
+        var mensaje = Leer(Assert.Single(smtp.Mensajes));
+        Assert.Equal("Restablece tu contraseña de CampusBite", mensaje.Subject);
+        Assert.Contains($"{UrlRecuperacion}?token=a%20b%2Fc", mensaje.TextBody);
+        Assert.Contains("&lt;b&gt;", mensaje.HtmlBody);
+        Assert.DoesNotContain("<b>López</b>", mensaje.HtmlBody);
+        Assert.DoesNotContain(log.Registros, r => r.Nivel >= LogLevel.Warning && r.Categoria.EndsWith("SmtpEnviadorCorreo"));
+    }
+
+    [Theory]
+    [InlineData("")]                                                     // sin configurar
+    [InlineData("http://campusbite-front.azurewebsites.net/restablecer")]  // http fuera de localhost
+    public async Task Recuperacion_con_URL_ausente_o_insegura_da_503_sin_conectar(string url)
+    {
+        await using var smtp = new ServidorSmtpDePrueba();
+        var (enviador, log) = Crear(smtp.Puerto, new() { ["Correo:UrlRecuperacion"] = url });
+
+        await Assert.ThrowsAsync<ServiceUnavailableException>(() => enviador.EnviarRecuperacionAsync("ana@uttt.edu.mx", "Ana", Token));
+
+        Assert.Equal(0, smtp.Conexiones);
+        Assert.Contains(log.Registros, r => r.Nivel == LogLevel.Error && r.Categoria.EndsWith("SmtpEnviadorCorreo"));
+    }
+
+    [Fact]
+    public async Task Recuperacion_con_fallo_de_SMTP_da_503_y_el_log_no_lleva_correo_token_ni_excepcion()
+    {
+        await using var smtp = new ServidorSmtpDePrueba(ServidorSmtpDePrueba.Modo.RechazaAutenticacion);
+        var (enviador, log) = Crear(smtp.Puerto, new() { ["Correo:UrlRecuperacion"] = UrlRecuperacion });
+
+        await Assert.ThrowsAsync<ServiceUnavailableException>(() => enviador.EnviarRecuperacionAsync("ana@uttt.edu.mx", "Ana", Token));
+
+        var error = Assert.Single(log.Registros, r => r.Nivel == LogLevel.Error && r.Categoria.EndsWith("SmtpEnviadorCorreo"));
+        Assert.Null(error.Excepcion);
+        Assert.DoesNotContain("ana@uttt.edu.mx", error.Mensaje);
+        Assert.DoesNotContain(Token, error.Mensaje);
+        Assert.Contains("AuthenticationException", error.Mensaje);
+    }
+
     // ---- Defecto D-1 (documentado, sin corregir: requiere autorización) -------------------------------------------
     // El mensaje (new MailboxAddress) se arma ANTES del try: una dirección que [EmailAddress] y la BD aceptan pero
     // MimeKit no ("a..b@x.com", "a,b@x.com", "(c)a@x.com") lanza ParseException, que no se convierte en 503; el
