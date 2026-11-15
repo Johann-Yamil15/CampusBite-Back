@@ -54,6 +54,7 @@ public class ExceptionMiddleware
         ForbiddenException => StatusCodes.Status403Forbidden,
         NotFoundException => StatusCodes.Status404NotFound,
         ConflictException => StatusCodes.Status409Conflict,
+        TooManyRequestsException => StatusCodes.Status429TooManyRequests,
         ServiceUnavailableException => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status400BadRequest
     };

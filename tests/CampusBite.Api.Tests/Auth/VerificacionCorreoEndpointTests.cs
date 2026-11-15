@@ -183,5 +183,21 @@ public class VerificacionCorreoEndpointTests : IClassFixture<ApiDePrueba>
         public Task<Guid> RegistrarCafeteriaAsync(string nombreEncargado, string correo, string contrasenaHash, string? telefono,
             string nombreCafeteria, string ubicacion, bool esDelCampus, string puntoEntrega,
             IReadOnlyList<MetodoPago> metodos, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        // JJ-Sprint5 13/11/2026: verificar el correo lee nombre e idCafeteria del usuario para la respuesta
+        public Task<CredencialesUsuario?> ObtenerPorIdAsync(Guid idUsuario, CancellationToken cancellationToken = default)
+        {
+            var u = _porCorreo.Values.FirstOrDefault(x => x.Credenciales.IdUsuario == idUsuario);
+            return Task.FromResult<CredencialesUsuario?>(u.Credenciales is null
+                ? null
+                : new CredencialesUsuario
+                {
+                    IdUsuario = idUsuario, IdRol = u.Credenciales.IdRol, Activo = u.Credenciales.Activo,
+                    ContrasenaHash = u.Credenciales.ContrasenaHash, Nombre = u.Nombre
+                });
+        }
+
+        public Task CambiarPasswordAsync(Guid idUsuario, string contrasenaHash, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 }

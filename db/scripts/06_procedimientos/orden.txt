@@ -56,3 +56,11 @@
 # Verificación de correo al registrarse (JY, Sprint 4)
 033_sp_generar_verificacion.sql
 034_sp_verificar_correo.sql
+# Sprint 5 (rediseño alumno/proveedor): menú, órdenes, tablero, perfil, favoritos, horario, promociones, reportes
+035_fn_apoyo_sprint5.sql
+036_sp_ordenes_sprint5.sql
+037_sp_usuario_perfil.sql
+038_sp_favoritos.sql
+039_sp_horario.sql
+040_sp_promociones.sql
+041_sp_reporte_estadisticas.sql

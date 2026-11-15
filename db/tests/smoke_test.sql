@@ -1,4 +1,4 @@
--- =====================================================================
+﻿-- =====================================================================
 -- CampusBite · Smoke test del flujo completo (requiere los datos de 90_datos_dev)
 -- JY-Sprint2 09/10/2026: procedimientos con CALL, métodos de pago en tabla, sin orden.total, fechas
 -- revisadas y verificaciones de redundancia, RLS y permisos.
@@ -24,6 +24,7 @@ DECLARE
   v_activo BOOLEAN;
   v_verif  BOOLEAN;
   v_codigo TEXT;
+  v_nombre VARCHAR;   -- JJ-Sprint5: OUT p_nombre de sp_obtener_credenciales (debe ser del mismo tipo para ser escribible)
   v_json   JSONB;
   v_n      INT;
   v_ok     BOOLEAN;
@@ -53,8 +54,8 @@ BEGIN
   ASSERT v_n = 0, format('Hay %s sp_* que no son PROCEDURE', v_n);
   SELECT count(*) INTO v_n FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'sp\_%' AND p.prokind = 'p';
-  ASSERT v_n = 34, format('Se esperaban 34 procedimientos sp_*, hay %s', v_n);
-  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 34 sp_* y todos son PROCEDURE';
+  ASSERT v_n = 56, format('Se esperaban 56 procedimientos sp_*, hay %s', v_n);
+  RAISE NOTICE 'OK 1: 13 tablas, columnas de V1 retiradas, 56 sp_* y todos son PROCEDURE';
 
   -- 2. Registro + duplicado + credenciales -------------------------------------------
   CALL sp_registrar_usuario('Nuevo Alumno', 'Nuevo@Ejemplo.test', 'HASH_X', 'UTT9999999', '7719999999', v_id);
@@ -64,10 +65,10 @@ BEGIN
     CALL sp_registrar_usuario('Otro', 'nuevo@ejemplo.TEST', 'HASH_Y', NULL, NULL, v_id);   -- CITEXT: mismo correo
   EXCEPTION WHEN unique_violation THEN v_ok := true; END;
   ASSERT v_ok, 'El correo duplicado (sin distinguir mayúsculas) debió rechazarse';
-  CALL sp_obtener_credenciales('NUEVO@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
+  CALL sp_obtener_credenciales('NUEVO@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif, v_nombre, v_orden2);
   ASSERT v_rol = 1 AND v_hash = 'HASH_X' AND v_activo, 'sp_obtener_credenciales debe encontrar al alumno';
   ASSERT NOT v_verif, 'Un alumno recién registrado nace con el correo sin verificar';
-  CALL sp_obtener_credenciales('nadie@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
+  CALL sp_obtener_credenciales('nadie@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif, v_nombre, v_orden2);
   ASSERT v_id IS NULL, 'Un correo inexistente debe devolver NULL';
   RAISE NOTICE 'OK 2: registro, correo duplicado (CITEXT) y credenciales';
 
@@ -94,20 +95,19 @@ BEGIN
   -- 5. Permisos: un alumno no puede cambiar estados de la cafetería ----------------
   v_ok := false;
   BEGIN
-    CALL sp_cambiar_estado_orden(v_orden, 'en_preparacion', c_alumno);
+    CALL sp_cambiar_estado_orden(v_orden, 'en_preparacion', c_alumno, NULL);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'Un alumno no debe poder avanzar la orden';
   RAISE NOTICE 'OK 5: control de permisos en sp_cambiar_estado_orden';
 
   -- 6. Flujo de la cafetería y entrega con código ----------------------------------
-  CALL sp_cambiar_estado_orden(v_orden, 'en_preparacion', c_admin);
-  CALL sp_cambiar_estado_orden(v_orden, 'lista', c_admin);
+  CALL sp_cambiar_estado_orden(v_orden, 'en_preparacion', c_admin, NULL);
+  CALL sp_cambiar_estado_orden(v_orden, 'lista', c_admin, NULL);
   v_ok := false;
-  BEGIN
-    CALL sp_entregar_orden(v_orden, CASE WHEN v_codigo = '000000' THEN '111111' ELSE '000000' END, c_admin);
-  EXCEPTION WHEN OTHERS THEN v_ok := true; END;
-  ASSERT v_ok, 'Un código de recogida incorrecto debió rechazarse';
-  CALL sp_entregar_orden(v_orden, v_codigo, c_admin);
+  -- JJ-Sprint5 13/11/2026: el código erróneo ya no lanza excepción (guarda el intento); devuelve el resultado
+  CALL sp_entregar_orden(v_orden, CASE WHEN v_codigo = '000000' THEN '111111' ELSE '000000' END, c_admin, v_hash);
+  ASSERT v_hash = 'codigo_incorrecto', 'Un código de recogida incorrecto debió rechazarse';
+  CALL sp_entregar_orden(v_orden, v_codigo, c_admin, v_hash);
   ASSERT (SELECT o.estado FROM orden o WHERE o.id_orden = v_orden) = 'entregada', 'Debe quedar entregada';
   ASSERT (SELECT p.estado FROM pago p WHERE p.id_orden = v_orden) = 'pagado', 'El efectivo se cobra al entregar';
   SELECT count(*) INTO v_n FROM historial_estado_orden h WHERE h.id_orden = v_orden;
@@ -156,16 +156,16 @@ BEGIN
   RAISE NOTICE 'OK 9: validaciones de hora, cantidad, items y método de pago (cafeteria_metodo_pago)';
 
   -- 10. Lecturas por procedimiento -----------------------------------------------
-  CALL sp_menu_cafeteria(NULL, v_json);
+  CALL sp_menu_cafeteria(c_cafe, v_json);   -- JJ-Sprint5: solo la de prueba (la base local puede tener más)
   ASSERT jsonb_array_length(v_json) = 1, 'El menú debe traer 1 cafetería';
   ASSERT jsonb_array_length(v_json->0->'productos') = 3, 'El menú debe traer 3 productos';
   ASSERT jsonb_array_length(v_json->0->'metodos_pago') = 3, 'La cafetería debe aceptar 3 métodos';
-  CALL sp_mis_ordenes(c_alumno, 100, 0, v_json);
+  CALL sp_mis_ordenes(c_alumno, 100, 0, v_json, v_n);
   ASSERT jsonb_array_length(v_json) = v_previas + 2,
          format('El alumno debe tener %s órdenes, tiene %s', v_previas + 2, jsonb_array_length(v_json));
   ASSERT (SELECT (e->>'total')::numeric FROM jsonb_array_elements(v_json) e
            WHERE (e->>'id_orden')::uuid = v_orden) = 135.00, 'El total de la orden sale de pago.monto';
-  CALL sp_mis_ordenes(c_alumno, 1, 0, v_json);
+  CALL sp_mis_ordenes(c_alumno, 1, 0, v_json, v_n);
   ASSERT jsonb_array_length(v_json) = 1, 'sp_mis_ordenes debe respetar el límite';
   RAISE NOTICE 'OK 10: sp_menu_cafeteria y sp_mis_ordenes devuelven JSON (total desde pago.monto)';
 
@@ -259,15 +259,16 @@ BEGIN
 
   -- 15. Lecturas con autorización dentro de la base
   SET LOCAL ROLE app_backend;
-  CALL sp_mis_ordenes(c_alumno, 20, 0, v_json);
+  CALL sp_mis_ordenes(c_alumno, 20, 0, v_json, v_n);
   ASSERT jsonb_array_length(v_json) >= 1, 'sp_mis_ordenes debe devolver las órdenes del alumno';
-  CALL sp_mis_ordenes(c_admin, 20, 0, v_json);
+  CALL sp_mis_ordenes(c_admin, 20, 0, v_json, v_n);
   ASSERT jsonb_array_length(v_json) = 0, 'otro usuario no ve órdenes ajenas';
   v_ok := false;
-  BEGIN CALL sp_cola_cafeteria(c_cafe, c_alumno, v_json);
+  BEGIN CALL sp_cola_cafeteria(c_cafe, c_alumno, NULL, v_json);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'Un alumno no debe ver la cola de la cafetería';
-  CALL sp_cola_cafeteria(c_cafe, c_admin, v_json);
+  -- JJ-Sprint5: el tablero es por día y las órdenes de prueba son para mañana
+  CALL sp_cola_cafeteria(c_cafe, c_admin, ((now() AT TIME ZONE 'America/Mexico_City')::date + 1), v_json);
   ASSERT jsonb_array_length(v_json) >= 1, 'El encargado debe ver la cola con la orden nueva';
   v_ok := false;
   BEGIN CALL sp_exigir_gestor_cafeteria(c_cafe, c_admin, 'x');
@@ -284,7 +285,7 @@ BEGIN
   END LOOP;
   SET LOCAL ROLE intruso;
   v_ok := false;
-  BEGIN CALL sp_mis_ordenes(c_alumno, 20, 0, v_json);
+  BEGIN CALL sp_mis_ordenes(c_alumno, 20, 0, v_json, v_n);
   EXCEPTION WHEN insufficient_privilege THEN v_ok := true; END;
   ASSERT v_ok, 'PUBLIC no debe ejecutar sp_mis_ordenes';
   v_ok := false;
@@ -356,7 +357,7 @@ BEGIN
 
   CALL sp_crear_orden(c_alumno, c_cafe, v_hora, 'efectivo',
          jsonb_build_array(jsonb_build_object('id_producto', c_p1, 'cantidad', 1)), NULL, v_orden);
-  CALL sp_cambiar_estado_orden(v_orden, 'en_preparacion', c_admin);
+  CALL sp_cambiar_estado_orden(v_orden, 'en_preparacion', c_admin, NULL);
   ASSERT (SELECT b.cambiado_por FROM bitacora b WHERE b.tabla = 'orden' AND b.id_registro = v_orden::text
            AND b.operacion = 'U') = c_admin, 'La bitácora debe registrar quién cambió la orden';
   ASSERT (SELECT count(*) FROM bitacora b WHERE b.tabla IN ('detalle_orden','pago')
@@ -762,13 +763,14 @@ DECLARE
   v_hash    VARCHAR;
   v_activo  BOOLEAN;
   v_verif   BOOLEAN;
+  v_caf     UUID;      -- JJ-Sprint5: OUT p_id_cafeteria de sp_obtener_credenciales
   v_ok      BOOLEAN;
   c_h1      VARCHAR := repeat('a', 64);
   c_h2      VARCHAR := repeat('b', 64);
 BEGIN
   SET LOCAL ROLE app_backend;
   CALL sp_registrar_usuario('Por Verificar', 'verificar@ejemplo.test', 'HASH_V', NULL, NULL, v_id);
-  CALL sp_obtener_credenciales('verificar@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
+  CALL sp_obtener_credenciales('verificar@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif, v_nombre, v_caf);
   ASSERT NOT v_verif, 'Nace sin verificar';
 
   CALL sp_generar_verificacion('VERIFICAR@ejemplo.test', c_h1, now() + interval '1 day', v_nombre);
@@ -782,7 +784,7 @@ BEGIN
 
   CALL sp_verificar_correo(c_h2, v_id, v_correo, v_rol);
   ASSERT v_correo = 'verificar@ejemplo.test' AND v_rol = 1, 'Devuelve el usuario para iniciar sesión';
-  CALL sp_obtener_credenciales('verificar@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif);
+  CALL sp_obtener_credenciales('verificar@ejemplo.test', v_id, v_rol, v_hash, v_activo, v_verif, v_nombre, v_caf);
   ASSERT v_verif, 'Queda verificado';
 
   v_ok := false;

@@ -28,7 +28,7 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
     {
         var enlace = ConstruirEnlace(_opciones.UrlVerificacion, "Correo:UrlVerificacion", "Correo__UrlVerificacion", token);
         return EnviarAsync(correo, nombre, "Verifica tu correo en CampusBite", Html(nombre, enlace), Texto(nombre, enlace),
-            "verificación", cancellationToken);
+            "verificación", conExcepcionEnLog: true, cancellationToken);
     }
 
     // JY-Sprint4 12/11/2026: AUD-001. Enlace para restablecer la contraseña. El log nunca lleva el correo, el token ni el
@@ -37,7 +37,7 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
     {
         var enlace = ConstruirEnlace(_opciones.UrlRecuperacion, "Correo:UrlRecuperacion", "Correo__UrlRecuperacion", token);
         return EnviarAsync(correo, nombre, "Restablece tu contraseña de CampusBite", HtmlRecuperacion(nombre, enlace),
-            TextoRecuperacion(nombre, enlace), "recuperación de contraseña", cancellationToken);
+            TextoRecuperacion(nombre, enlace), "recuperación de contraseña", conExcepcionEnLog: false, cancellationToken);
     }
 
     // El enlace es una credencial (activa la cuenta o cambia la contraseña): nunca se manda por http salvo a un front en localhost
@@ -60,7 +60,7 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
     }
 
     private async Task EnviarAsync(string correo, string nombre, string asunto, string html, string texto, string tipo,
-        CancellationToken cancellationToken)
+        bool conExcepcionEnLog, CancellationToken cancellationToken)
     {
         var mensaje = new MimeMessage
         {
@@ -84,7 +84,15 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogError("No se pudo enviar el correo de {Tipo} ({TipoError})", tipo, ex.GetType().Name);
+            // La recuperación nunca registra el mensaje de la excepción (puede traer la dirección del destinatario): solo su tipo
+            if (conExcepcionEnLog)
+            {
+                _logger.LogError(ex, "No se pudo enviar el correo de {Tipo} a {Correo}", tipo, correo);
+            }
+            else
+            {
+                _logger.LogError("No se pudo enviar el correo de {Tipo} ({TipoError})", tipo, ex.GetType().Name);
+            }
             throw new ServiceUnavailableException(MensajeNoDisponible);
         }
     }

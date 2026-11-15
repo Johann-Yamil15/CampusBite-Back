@@ -147,5 +147,12 @@ public class RegistroCafeteriaEndpointTests : IClassFixture<ApiDePrueba>
 
         public Task<(Guid IdUsuario, string Correo, RolUsuario Rol)> VerificarCorreoAsync(
             string tokenHash, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        // JJ-Sprint5 13/11/2026: sin BD en esta prueba
+        public Task<CredencialesUsuario?> ObtenerPorIdAsync(Guid idUsuario, CancellationToken cancellationToken = default)
+            => Task.FromResult<CredencialesUsuario?>(null);
+
+        public Task CambiarPasswordAsync(Guid idUsuario, string contrasenaHash, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 }

@@ -8,7 +8,9 @@ DECLARE
 BEGIN
   FOREACH v_tabla IN ARRAY ARRAY[
     'rol', 'usuario', 'cafeteria', 'cafeteria_metodo_pago', 'horario_cafeteria', 'categoria', 'producto',
-    'orden', 'detalle_orden', 'pago', 'historial_estado_orden', 'suscripcion_push', 'bitacora']
+    'orden', 'detalle_orden', 'pago', 'historial_estado_orden', 'suscripcion_push', 'bitacora',
+    -- JJ-Sprint5 13/11/2026
+    'cierre_cafeteria', 'promocion', 'favorito_cafeteria', 'favorito_producto', 'preferencia_alumno', 'reporte_orden']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', v_tabla);
   END LOOP;

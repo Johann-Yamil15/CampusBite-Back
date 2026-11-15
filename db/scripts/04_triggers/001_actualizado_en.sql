@@ -14,3 +14,6 @@ CREATE OR REPLACE TRIGGER trg_pago_upd      BEFORE UPDATE ON pago      FOR EACH 
 CREATE OR REPLACE TRIGGER trg_rol_upd       BEFORE UPDATE ON rol               FOR EACH ROW EXECUTE FUNCTION fn_set_actualizado_en();
 CREATE OR REPLACE TRIGGER trg_categoria_upd BEFORE UPDATE ON categoria         FOR EACH ROW EXECUTE FUNCTION fn_set_actualizado_en();
 CREATE OR REPLACE TRIGGER trg_horario_upd   BEFORE UPDATE ON horario_cafeteria FOR EACH ROW EXECUTE FUNCTION fn_set_actualizado_en();
+-- JJ-Sprint5 13/11/2026: tablas nuevas del Sprint 5
+CREATE OR REPLACE TRIGGER trg_promocion_upd   BEFORE UPDATE ON promocion          FOR EACH ROW EXECUTE FUNCTION fn_set_actualizado_en();
+CREATE OR REPLACE TRIGGER trg_preferencia_upd BEFORE UPDATE ON preferencia_alumno FOR EACH ROW EXECUTE FUNCTION fn_set_actualizado_en();

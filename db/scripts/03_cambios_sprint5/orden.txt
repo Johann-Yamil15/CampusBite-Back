@@ -1,0 +1,8 @@
+# Módulo 03_cambios_sprint5: cambios de esquema del Sprint 5 (rediseño alumno/proveedor). Cada script revisa antes de cambiar.
+001_tipos_sprint5.sql
+002_columnas_orden_cafeteria_producto.sql
+003_cierre_cafeteria.sql
+004_promocion.sql
+005_favoritos.sql
+006_preferencia_alumno.sql
+007_reporte_orden.sql
