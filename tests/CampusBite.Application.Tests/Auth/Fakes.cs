@@ -37,16 +37,43 @@ internal class FakeUsuarioRepository : IUsuarioRepository
     public Task<CredencialesUsuario?> ObtenerCredencialesAsync(string correo, CancellationToken cancellationToken = default)
         => Task.FromResult(Usuarios.GetValueOrDefault(correo));
 
-    // JJ-Sprint3 21/10/2026: TEC-12
-    public (string Correo, string Hash)? UltimoRestablecimiento { get; private set; }
+    // JY-Sprint4 12/11/2026: AUD-001. Recuperación con las mismas reglas que sp_solicitar_recuperacion y
+    // sp_restablecer_password: un token por cuenta, de un solo uso, solo cuentas activas, separado de la verificación.
+    // N1: mientras haya uno vigente no se reemplaza (devuelve null y no se manda correo)
+    public Dictionary<string, (string Correo, DateTimeOffset Expira)> TokensRecuperacion { get; } = new();
+    public DateTimeOffset? UltimaExpiracionRecuperacion { get; private set; }
 
-    public Task RestablecerPasswordAsync(string correo, string contrasenaHash, CancellationToken cancellationToken = default)
+    public Task<string?> SolicitarRecuperacionAsync(
+        string correo, string tokenHash, DateTimeOffset expira, CancellationToken cancellationToken = default)
     {
-        UltimoRestablecimiento = (correo, contrasenaHash);
-        if (Usuarios.TryGetValue(correo, out var credenciales))
+        if (!Usuarios.TryGetValue(correo, out var usuario) || !usuario.Activo
+            || TokensRecuperacion.Values.Any(t => t.Correo == correo && t.Expira > DateTimeOffset.UtcNow))
         {
-            credenciales.ContrasenaHash = contrasenaHash;
+            return Task.FromResult<string?>(null);
         }
+
+        foreach (var vencido in TokensRecuperacion.Where(t => t.Value.Correo == correo).Select(t => t.Key).ToList())
+        {
+            TokensRecuperacion.Remove(vencido);
+        }
+        TokensRecuperacion[tokenHash] = (correo, expira);
+        UltimaExpiracionRecuperacion = expira;
+        return Task.FromResult<string?>(Nombres.GetValueOrDefault(correo, "Usuario"));
+    }
+
+    public Task RestablecerPasswordAsync(string tokenHash, string contrasenaHash, CancellationToken cancellationToken = default)
+    {
+        if (!TokensRecuperacion.TryGetValue(tokenHash, out var token) || !Usuarios[token.Correo].Activo)
+        {
+            throw new BusinessRuleException("El enlace para restablecer la contraseña no es válido o ya se usó");
+        }
+        if (token.Expira <= DateTimeOffset.UtcNow)
+        {
+            throw new BusinessRuleException("El enlace para restablecer la contraseña venció; pide otro");
+        }
+
+        TokensRecuperacion.Remove(tokenHash);
+        Usuarios[token.Correo].ContrasenaHash = contrasenaHash;
         return Task.CompletedTask;
     }
 
@@ -130,6 +157,20 @@ internal class FakeEnviadorCorreo : IEnviadorCorreo
         }
 
         Enviados.Add((correo, nombre, token));
+        return Task.CompletedTask;
+    }
+
+    // JY-Sprint4 12/11/2026: AUD-001
+    public List<(string Correo, string Nombre, string Token)> Recuperaciones { get; } = [];
+
+    public Task EnviarRecuperacionAsync(string correo, string nombre, string token, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        Recuperaciones.Add((correo, nombre, token));
         return Task.CompletedTask;
     }
 }
