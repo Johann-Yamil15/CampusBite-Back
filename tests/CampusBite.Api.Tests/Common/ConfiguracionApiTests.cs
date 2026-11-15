@@ -96,18 +96,17 @@ public class ConfiguracionApiTests : IClassFixture<ApiDePrueba>
         Assert.True(politica.AllowAnyHeader && politica.AllowAnyMethod);
     }
 
-    // Comportamiento ACTUAL documentado (hallazgo S5122 de SonarCloud): sin orígenes configurados se permite cualquiera,
-    // pero nunca con credenciales. La propuesta de corrección (fallar fuera de Development) va aparte.
+    // Hallazgo S5122 de SonarCloud, corregido: sin orígenes configurados CORS no autoriza a ningún front.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" , ")]
-    public void CORS_sin_origenes_permite_cualquiera_pero_sin_credenciales(string? origenes)
+    public void CORS_sin_origenes_no_permite_ninguno(string? origenes)
     {
         var politica = Cors(origenes);
 
-        Assert.True(politica.AllowAnyOrigin);
-        Assert.False(politica.SupportsCredentials);
+        Assert.False(politica.AllowAnyOrigin);
+        Assert.Empty(politica.Origins);
     }
 
     // ---- Límite de intentos (429) ---------------------------------------------------------------------------------

@@ -95,16 +95,8 @@ public static class ServiceCollectionExtensions
         {
             options.AddPolicy(CorsSettings.PolicyName, policy =>
             {
-                if (origins.Length > 0)
-                {
-                    policy.WithOrigins(origins).AllowCredentials();
-                }
-                else
-                {
-                    policy.AllowAnyOrigin();
-                }
-
-                policy.AllowAnyHeader().AllowAnyMethod();
+                // Solo los orígenes configurados; sin ninguno, CORS no autoriza a ningún front
+                policy.WithOrigins(origins).AllowCredentials().AllowAnyHeader().AllowAnyMethod();
             });
         });
 

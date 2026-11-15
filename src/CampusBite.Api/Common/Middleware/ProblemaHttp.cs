@@ -9,7 +9,8 @@ public static class ProblemaHttp
     public static Task EscribirAsync(HttpContext context, int statusCode, string detail)
     {
         context.Response.StatusCode = statusCode;
-        return context.Response.WriteAsJsonAsync(Crear(context, statusCode, detail), options: null, contentType: "application/problem+json");
+        return context.Response.WriteAsJsonAsync(Crear(context, statusCode, detail), options: null, contentType: "application/problem+json",
+            cancellationToken: context.RequestAborted);
     }
 
     // JY-Sprint4 27/10/2026: TEC-10, para los filtros de MVC que responden con un IActionResult en vez de escribir
