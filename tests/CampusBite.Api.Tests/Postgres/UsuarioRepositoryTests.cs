@@ -186,4 +186,22 @@ public class UsuarioRepositoryTests(PostgresDePrueba bd)
         Assert.Contains("correo", porCorreo.Message);
         Assert.Null(await Repo().ObtenerCredencialesAsync(correo));                  // la transacción no dejó el usuario
     }
+
+    // sp_obtener_usuario con un usuario que SÍ existe: el encargado trae su cafetería; el alumno, no
+    [FactPostgres]
+    public async Task ObtenerPorId_mapea_al_encargado_con_su_cafeteria_y_al_alumno_sin_ella()
+    {
+        var encargado = await Repo().ObtenerPorIdAsync(PostgresDePrueba.Encargado);
+        var alumno = await Repo().ObtenerPorIdAsync(PostgresDePrueba.Alumno);
+
+        Assert.NotNull(encargado);
+        Assert.Equal(("cafeteria@ejemplo.test", RolUsuario.AdminCafeteria, "Encargado Cafetería"),
+            (encargado.Correo, encargado.IdRol, encargado.Nombre));
+        Assert.Equal(PostgresDePrueba.Cafeteria, encargado.IdCafeteria);
+        Assert.True(encargado.Activo);
+        Assert.NotNull(alumno);
+        Assert.Equal((RolUsuario.Alumno, "Alumno de Prueba"), (alumno.IdRol, alumno.Nombre));
+        Assert.Null(alumno.IdCafeteria);
+        Assert.Null(await Repo().ObtenerPorIdAsync(Guid.NewGuid()));
+    }
 }

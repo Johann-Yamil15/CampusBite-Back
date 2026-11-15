@@ -5,4 +5,7 @@ namespace CampusBite.Application.Common.Correo;
 public interface IEnviadorCorreo
 {
     Task EnviarVerificacionAsync(string correo, string nombre, string token, CancellationToken cancellationToken = default);
+
+    // JY-Sprint4 12/11/2026: AUD-001. Enlace para restablecer la contraseña (otra URL y otro texto que la verificación)
+    Task EnviarRecuperacionAsync(string correo, string nombre, string token, CancellationToken cancellationToken = default);
 }

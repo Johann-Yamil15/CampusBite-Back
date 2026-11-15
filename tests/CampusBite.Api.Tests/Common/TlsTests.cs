@@ -21,6 +21,7 @@ public class TlsTests
     [InlineData("smtp.gmail.com", false)]
     [InlineData("172.32.0.1", false)]                                     // fuera del rango privado
     [InlineData("8.8.8.8", false)]
+    [InlineData("2001:db8::1", false)]                                    // IPv6 pública: no es de la red local
     [InlineData("", false)]
     [InlineData(null, false)]
     public void EsLocal_solo_reconoce_la_red_local_de_desarrollo(string? host, bool esperado)

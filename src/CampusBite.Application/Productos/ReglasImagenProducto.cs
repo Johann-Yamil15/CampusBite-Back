@@ -61,7 +61,7 @@ public static class ReglasImagenProducto
                 throw ExcedeTamano();
             }
 
-            copia.Write(buffer, 0, leidos);
+            await copia.WriteAsync(buffer.AsMemory(0, leidos), cancellationToken);
         }
 
         ValidarTamano(copia.Length);

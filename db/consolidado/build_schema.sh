@@ -79,7 +79,7 @@ Requisito: PostgreSQL 14 o superior (usa \`CREATE OR REPLACE TRIGGER\` y procedi
 En el \`.env\` de la raíz del repo, la conexión local ya viene así en \`.env.example\`:
 
 \`\`\`
-ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=app_backend_dev
+ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=<clave de desarrollo, ver .env.example>
 \`\`\`
 
 - El archivo local incluye la clave de desarrollo \`app_backend_dev\` y datos de prueba: **nunca** lo corras en un servidor real.
@@ -193,13 +193,8 @@ HASH="$(for s in "${SCRIPTS[@]}"; do echo "== $s"; tr -d '\r' < "$DB_DIR/$s"; do
 generar_changelog() {
   local i s ctx run
   {
-    echo '<?xml version="1.0" encoding="UTF-8"?>'
-    echo '<!-- Generado por db/consolidado/build_schema.sh a partir de los orden.txt. NO editar a mano. -->'
-    echo '<databaseChangeLog'
-    echo '    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"'
-    echo '    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
-    echo '    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog'
-    echo '                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">'
+    # La cabecera (con los espacios de nombres XML de Liquibase, que son identificadores fijos) vive en su propio archivo
+    tr -d '\r' < "$DIR/changelog_cabecera.xml"
     echo
     echo '    <!-- Liquibase se usa solo en local (Docker). Los scripts son idempotentes: runOnChange vuelve a'
     echo '         ejecutar un script cuando cambia su contenido. Para revertir en local: docker compose down -v. -->'

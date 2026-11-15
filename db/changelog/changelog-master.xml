@@ -219,6 +219,11 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="scripts/04_triggers/009_categorias_base.sql" author="campusbite" runOnChange="true">
+        <sqlFile path="scripts/04_triggers/009_categorias_base.sql" splitStatements="false" stripComments="false"/>
+        <rollback/>
+    </changeSet>
+
     <changeSet id="scripts/05_vistas/001_vw_menu_cafeteria.sql" author="campusbite" runOnChange="true">
         <sqlFile path="scripts/05_vistas/001_vw_menu_cafeteria.sql" splitStatements="false" stripComments="false"/>
         <rollback/>
