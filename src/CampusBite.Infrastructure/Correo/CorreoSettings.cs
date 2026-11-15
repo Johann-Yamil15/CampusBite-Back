@@ -16,4 +16,7 @@ public sealed class CorreoSettings
 
     // Página del frontend que recibe ?token=... y llama a POST /api/auth/verificar-correo
     public string UrlVerificacion { get; set; } = string.Empty;
+
+    // JY-Sprint4 12/11/2026: AUD-001. Página del frontend que recibe ?token=... y llama a POST /api/auth/restablecer-password
+    public string UrlRecuperacion { get; set; } = string.Empty;
 }

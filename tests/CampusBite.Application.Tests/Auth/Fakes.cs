@@ -142,6 +142,20 @@ internal class FakeEnviadorCorreo : IEnviadorCorreo
         Enviados.Add((correo, nombre, token));
         return Task.CompletedTask;
     }
+
+    // JY-Sprint4 12/11/2026: AUD-001
+    public List<(string Correo, string Nombre, string Token)> Recuperaciones { get; } = [];
+
+    public Task EnviarRecuperacionAsync(string correo, string nombre, string token, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        Recuperaciones.Add((correo, nombre, token));
+        return Task.CompletedTask;
+    }
 }
 
 internal class FakePasswordHasher : IPasswordHasher
