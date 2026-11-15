@@ -451,6 +451,8 @@ jobs:
       # db/tests/** (smoke_test.sql, cargar_productos_api.py...) son pruebas, no producción: se clasifican como tales
       # con sonar.test.inclusions (no se excluyen del análisis; solo dejan de contar como líneas a cubrir).
       # skipJreProvisioning: usa el Java 21 del paso anterior en lugar de descargar otro en cada análisis.
+      # sonar.cpd.exclusions (duplicación aceptada): los DTOs repiten a propósito sus reglas de validación (cada uno es un
+      # contrato distinto) y los scripts de db/scripts son historia ya aplicada en Neon, que no se debe reescribir.
       - name: 🔍 Iniciar análisis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -467,6 +469,7 @@ jobs:
           /d:sonar.cs.vstest.reportsPaths="TestResults/*.trx"
           /d:sonar.exclusions="**/bin/**,**/obj/**,db/consolidado/versiones/**"
           /d:sonar.coverage.exclusions="tests/**,**/Program.cs"
+          /d:sonar.cpd.exclusions="**/Dtos/**,db/scripts/**"
           /d:sonar.test.inclusions="db/tests/**"
 
       - name: 🏗️ Compilar para el análisis

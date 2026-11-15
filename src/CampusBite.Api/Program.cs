@@ -18,7 +18,10 @@ var builder = WebApplication.CreateBuilder(args);
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrEmpty(port))
 {
+    // El TLS lo termina el front de la plataforma (Azure App Service); la app solo escucha dentro de su red interna
+#pragma warning disable S5332 // http interno detrás del proxy con HTTPS
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+#pragma warning restore S5332
 }
 
 // JJ-Sprint2 09/10/2026: errores de validación (400) con título en español y el mismo formato ProblemDetails
