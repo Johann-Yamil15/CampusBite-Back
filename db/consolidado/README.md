@@ -35,7 +35,7 @@ Requisito: PostgreSQL 14 o superior (usa `CREATE OR REPLACE TRIGGER` y procedimi
 En el `.env` de la raíz del repo, la conexión local ya viene así en `.env.example`:
 
 ```
-ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=app_backend_dev
+ConnectionStrings__Local=Host=localhost;Port=5432;Database=campusbite;Username=app_backend;Password=<clave de desarrollo, ver .env.example>
 ```
 
 - El archivo local incluye la clave de desarrollo `app_backend_dev` y datos de prueba: **nunca** lo corras en un servidor real.
