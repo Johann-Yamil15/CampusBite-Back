@@ -54,7 +54,9 @@ public class ReglasImagenProductoTests
     [Fact]
     public void WebP_valido_se_acepta()
     {
-        ReglasImagenProducto.ValidarContenido("RIFF\0\0\0\0WEBPVP8 "u8, "image/webp");
+        var error = Record.Exception(() => ReglasImagenProducto.ValidarContenido("RIFF\0\0\0\0WEBPVP8 "u8, "image/webp"));
+
+        Assert.Null(error);
     }
 
     [Fact]
