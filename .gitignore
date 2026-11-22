@@ -52,3 +52,6 @@ Thumbs.db
 
 # JY-Sprint4 27/10/2026: reportes de las pruebas de mutación (dotnet stryker)
 StrykerOutput/
+
+# k6
+tests/carga-k6/resultados/
