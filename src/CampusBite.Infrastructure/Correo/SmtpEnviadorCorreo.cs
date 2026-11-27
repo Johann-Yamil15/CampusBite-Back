@@ -40,6 +40,25 @@ internal sealed class SmtpEnviadorCorreo : IEnviadorCorreo
             TextoRecuperacion(nombre, enlace), "recuperación de contraseña", conExcepcionEnLog: false, cancellationToken);
     }
 
+    // JY-Sprint5 27/11/2026: seguimiento del pedido. Mismo SMTP que la verificación. El enlace "Seguir mi pedido"
+    // (Correo__UrlPedidos + /idOrden) es opcional: si no está configurado o no es seguro (https, salvo localhost), el
+    // correo sale sin él. No es una credencial, así que no hace fallar el envío.
+    public Task EnviarEstadoPedidoAsync(string correo, string nombre, AvisoPedido aviso, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_opciones.Host))
+        {
+            _logger.LogError("Correo:Host no está configurado. Define Correo__Host, Correo__Usuario y Correo__Password para enviar correos.");
+            throw new ServiceUnavailableException(MensajeNoDisponible);
+        }
+
+        var enlace = Tls.EsUrlSegura(_opciones.UrlPedidos)
+            ? $"{_opciones.UrlPedidos.TrimEnd('/')}/{aviso.IdOrden}"
+            : null;
+        var (asunto, html, texto) = PlantillaPedido.Crear(nombre, aviso, enlace);
+        return EnviarAsync(correo, nombre, asunto, html, texto, $"estado del pedido ({aviso.Evento})",
+            conExcepcionEnLog: false, cancellationToken);
+    }
+
     // El enlace es una credencial (activa la cuenta o cambia la contraseña): nunca se manda por http salvo a un front en localhost
     private string ConstruirEnlace(string urlBase, string clave, string variable, string token)
     {

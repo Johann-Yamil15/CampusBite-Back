@@ -19,4 +19,8 @@ public sealed class CorreoSettings
 
     // JY-Sprint4 12/11/2026: AUD-001. Página del frontend que recibe ?token=... y llama a POST /api/auth/restablecer-password
     public string UrlRecuperacion { get; set; } = string.Empty;
+
+    // JY-Sprint5 27/11/2026: página del frontend con el seguimiento de un pedido (<UrlPedidos>/<idOrden>). Opcional: sin ella
+    // el correo del pedido sale sin el botón "Seguir mi pedido".
+    public string UrlPedidos { get; set; } = string.Empty;
 }
