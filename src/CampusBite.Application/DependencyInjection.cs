@@ -1,5 +1,6 @@
 using CampusBite.Application.Auth;
 using CampusBite.Application.Cafeterias;
+using CampusBite.Application.Ordenes;
 using CampusBite.Application.Productos;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,6 +19,9 @@ public static class DependencyInjection
 
         // Productos: alta (TEC-09) e imagen (TEC-10)
         services.AddScoped<IProductoService, ProductoService>();
+
+        // Seguimiento del pedido por correo (JY-Sprint5 27/11/2026)
+        services.AddScoped<INotificadorPedido, NotificadorPedido>();
 
         return services;
     }

@@ -29,5 +29,9 @@ public interface IOrdenRepository
 
     Task ConfirmarPagoAsync(Guid idOrden, Guid idActor, string? referencia, CancellationToken cancellationToken = default);
 
+    // JY-Sprint5 27/11/2026: a quién avisar por correo de esta orden (null si no existe o su dueño no tiene correo
+    // verificado). 403 si el actor no es el dueño ni gestor de la cafetería.
+    Task<DestinatarioOrden?> DestinatarioAsync(Guid idOrden, Guid idActor, CancellationToken cancellationToken = default);
+
     Task<string> ReportarAsync(Guid idOrden, Guid idAlumno, MotivoReporte motivo, string? detalle, CancellationToken cancellationToken = default);
 }
