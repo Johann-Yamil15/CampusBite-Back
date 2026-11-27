@@ -66,14 +66,14 @@ public class AvisosDePedidoConBdTests(BdDePrueba bd) : PruebaConBd(bd)
         await FijarAvisoListoAsync(true);
 
         var id = await PedirAsync(alumno, "Transferencia");
-        var creada = await SiguienteAvisoAsync();
-        Assert.Equal(("alumno@ejemplo.test", "Alumno de Prueba"), (creada.Correo, creada.Nombre));
-        Assert.Equal((EventoPedido.Creada, id, 110m), (creada.Aviso.Evento, creada.Aviso.IdOrden, creada.Aviso.Total));
-        Assert.Equal("Chilaquiles verdes", Assert.Single(creada.Aviso.Lineas).Producto);
-        Assert.Null(creada.Aviso.CodigoRecogida);
+        Assert.True(_correo.AvisosPedido.IsEmpty);                                  // crear no avisa: empieza al aceptar
 
         await Json(await encargado.PostAsJsonAsync($"/api/ordenes/{id}/confirmar-pago", new { referencia = "SPEI 1234" }));
-        Assert.Equal(EventoPedido.PagoConfirmado, (await SiguienteAvisoAsync()).Aviso.Evento);
+        var aceptada = await SiguienteAvisoAsync();
+        Assert.Equal(("alumno@ejemplo.test", "Alumno de Prueba"), (aceptada.Correo, aceptada.Nombre));
+        Assert.Equal((EventoPedido.PagoConfirmado, id, 110m), (aceptada.Aviso.Evento, aceptada.Aviso.IdOrden, aceptada.Aviso.Total));
+        Assert.Equal("Chilaquiles verdes", Assert.Single(aceptada.Aviso.Lineas).Producto);
+        Assert.Null(aceptada.Aviso.CodigoRecogida);
 
         await Json(await encargado.PatchAsJsonAsync($"/api/ordenes/{id}/estado", new { estado = "EnPreparacion" }));
         Assert.Equal(EventoPedido.EnPreparacion, (await SiguienteAvisoAsync()).Aviso.Evento);
@@ -97,7 +97,6 @@ public class AvisosDePedidoConBdTests(BdDePrueba bd) : PruebaConBd(bd)
         var alumno = Con(RolUsuario.Alumno, Alumno);
         var encargado = Con(RolUsuario.AdminCafeteria, Encargado);
         var rechazada = await PedirAsync(alumno, "Tarjeta");
-        await SiguienteAvisoAsync();                                                 // el de "creada"
 
         await Json(await encargado.PostAsJsonAsync($"/api/ordenes/{rechazada}/rechazar", new { motivo = "Se nos acabó el producto" }));
 
@@ -105,7 +104,6 @@ public class AvisosDePedidoConBdTests(BdDePrueba bd) : PruebaConBd(bd)
         Assert.Equal((EventoPedido.Cancelada, "Se nos acabó el producto"), (aviso.Evento, aviso.MotivoCancelacion));
 
         var propia = await PedirAsync(alumno, "Efectivo");
-        await SiguienteAvisoAsync();
         await Json(await alumno.PostAsync($"/api/ordenes/{propia}/cancelar", content: null));
         Assert.Equal(EventoPedido.Cancelada, (await SiguienteAvisoAsync()).Aviso.Evento);
     }
@@ -134,7 +132,6 @@ public class AvisosDePedidoConBdTests(BdDePrueba bd) : PruebaConBd(bd)
         try
         {
             var id = await PedirAsync(alumno, "Efectivo");
-            await SiguienteAvisoAsync();
 
             await Json(await encargado.PatchAsJsonAsync($"/api/ordenes/{id}/estado", new { estado = "EnPreparacion" }));
             Assert.Equal(EventoPedido.EnPreparacion, (await SiguienteAvisoAsync()).Aviso.Evento);
