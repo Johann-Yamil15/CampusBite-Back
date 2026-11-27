@@ -48,7 +48,8 @@ public class OrdenesController : ControllerBase
     {
         var id = await _ordenes.CrearAsync(_usuario.Id, dto.IdCafeteria!.Value, dto.RecogidaEn!.Value, dto.Metodo!.Value,
             dto.Items, string.IsNullOrWhiteSpace(dto.Notas) ? null : dto.Notas.Trim(), cancellationToken);
-        var orden = await LeerYAvisarAsync(EventoPedido.Creada, id, cancellationToken);
+        // JJ-Sprint5 27/11/2026: crear no manda correo; el seguimiento empieza cuando la cafetería acepta (confirma el pago)
+        var orden = await _ordenes.ObtenerAsync(id, _usuario.Id, cancellationToken);
         return CreatedAtRoute(nameof(ObtenerOrden), new { idOrden = id }, orden);
     }
 
