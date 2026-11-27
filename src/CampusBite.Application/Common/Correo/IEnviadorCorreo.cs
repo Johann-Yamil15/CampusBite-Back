@@ -8,4 +8,7 @@ public interface IEnviadorCorreo
 
     // JY-Sprint4 12/11/2026: AUD-001. Enlace para restablecer la contraseña (otra URL y otro texto que la verificación)
     Task EnviarRecuperacionAsync(string correo, string nombre, string token, CancellationToken cancellationToken = default);
+
+    // JY-Sprint5 27/11/2026: aviso de un cambio de estado del pedido (asunto y texto según el evento). Mismo SMTP.
+    Task EnviarEstadoPedidoAsync(string correo, string nombre, AvisoPedido aviso, CancellationToken cancellationToken = default);
 }

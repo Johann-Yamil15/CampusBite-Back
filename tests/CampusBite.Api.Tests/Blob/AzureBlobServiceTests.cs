@@ -234,4 +234,22 @@ public class AzureBlobServiceTests : IClassFixture<ApiDePrueba>
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             blob.EliminarImagenAsync(Prefijo(servidor) + "foto.webp", cancelar.Token));
     }
+
+    // Un error que NO viene de Azure ni de la red (aquí, un archivo ya cerrado: el SDK lo rechaza como argumento inválido)
+    // no se disfraza de "servicio no disponible": sube tal cual para que se vea el defecto real
+    [Fact]
+    public async Task Un_error_que_no_es_de_Azure_no_se_convierte_en_503_y_se_propaga()
+    {
+        await using var servidor = new ServidorBlobDePrueba();
+        var (blob, log) = Crear(servidor.CadenaDeConexion);
+        var cerrado = new MemoryStream([1, 2, 3]);
+        await cerrado.DisposeAsync();
+
+        var ex = await Record.ExceptionAsync(() => blob.SubirImagenProductoAsync(Guid.NewGuid(), cerrado, "image/png"));
+
+        Assert.NotNull(ex);
+        Assert.IsNotType<ServiceUnavailableException>(ex);
+        Assert.DoesNotContain(log.Registros, r => r.Mensaje.Contains("No se pudo subir la imagen"));
+        Assert.Empty(servidor.Blobs);
+    }
 }

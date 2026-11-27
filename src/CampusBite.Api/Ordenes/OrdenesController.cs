@@ -1,5 +1,6 @@
 using CampusBite.Api.Common.Security;
 using CampusBite.Application.Common;
+using CampusBite.Application.Common.Correo;
 using CampusBite.Application.Common.Security;
 using CampusBite.Application.Ordenes;
 using CampusBite.Application.Ordenes.Dtos;
@@ -19,11 +20,22 @@ public class OrdenesController : ControllerBase
 {
     private readonly IOrdenRepository _ordenes;
     private readonly IUsuarioActual _usuario;
+    private readonly INotificadorPedido _avisos;
 
-    public OrdenesController(IOrdenRepository ordenes, IUsuarioActual usuario)
+    public OrdenesController(IOrdenRepository ordenes, IUsuarioActual usuario, INotificadorPedido avisos)
     {
         _ordenes = ordenes;
         _usuario = usuario;
+        _avisos = avisos;
+    }
+
+    // JY-Sprint5 27/11/2026: seguimiento por correo. Cada acción que cambia el estado de la orden manda un aviso a su dueño
+    // (aunque no esté en la página). Nunca falla la acción: si el aviso no se puede mandar, solo se registra.
+    private async Task<OrdenDto> LeerYAvisarAsync(EventoPedido evento, Guid idOrden, CancellationToken cancellationToken)
+    {
+        var orden = await _ordenes.ObtenerAsync(idOrden, _usuario.Id, cancellationToken);
+        await _avisos.NotificarAsync(evento, orden, _usuario.Id, cancellationToken);
+        return orden;
     }
 
     [HttpPost("api/ordenes")]
@@ -36,6 +48,7 @@ public class OrdenesController : ControllerBase
     {
         var id = await _ordenes.CrearAsync(_usuario.Id, dto.IdCafeteria!.Value, dto.RecogidaEn!.Value, dto.Metodo!.Value,
             dto.Items, string.IsNullOrWhiteSpace(dto.Notas) ? null : dto.Notas.Trim(), cancellationToken);
+        // JJ-Sprint5 27/11/2026: crear no manda correo; el seguimiento empieza cuando la cafetería acepta (confirma el pago)
         var orden = await _ordenes.ObtenerAsync(id, _usuario.Id, cancellationToken);
         return CreatedAtRoute(nameof(ObtenerOrden), new { idOrden = id }, orden);
     }
@@ -67,7 +80,7 @@ public class OrdenesController : ControllerBase
     public async Task<ActionResult<OrdenDto>> Cancelar(Guid idOrden, CancellationToken cancellationToken)
     {
         await _ordenes.CancelarAsync(idOrden, _usuario.Id, cancellationToken);
-        return Ok(await _ordenes.ObtenerAsync(idOrden, _usuario.Id, cancellationToken));
+        return Ok(await LeerYAvisarAsync(EventoPedido.Cancelada, idOrden, cancellationToken));
     }
 
     [HttpPost("api/ordenes/{idOrden:guid}/reportes")]
@@ -110,7 +123,8 @@ public class OrdenesController : ControllerBase
         }
 
         await _ordenes.CambiarEstadoAsync(idOrden, dto.Estado.Value, _usuario.Id, null, cancellationToken);
-        return Ok(await _ordenes.ObtenerAsync(idOrden, _usuario.Id, cancellationToken));
+        var evento = dto.Estado.Value == EstadoOrden.EnPreparacion ? EventoPedido.EnPreparacion : EventoPedido.Lista;
+        return Ok(await LeerYAvisarAsync(evento, idOrden, cancellationToken));
     }
 
     [HttpPost("api/ordenes/{idOrden:guid}/entregar")]
@@ -123,7 +137,7 @@ public class OrdenesController : ControllerBase
     public async Task<ActionResult<OrdenDto>> Entregar(Guid idOrden, [FromBody] EntregarOrdenDto dto, CancellationToken cancellationToken)
     {
         await _ordenes.EntregarAsync(idOrden, dto.CodigoRecogida, _usuario.Id, cancellationToken);
-        return Ok(await _ordenes.ObtenerAsync(idOrden, _usuario.Id, cancellationToken));
+        return Ok(await LeerYAvisarAsync(EventoPedido.Entregada, idOrden, cancellationToken));
     }
 
     [HttpPost("api/ordenes/{idOrden:guid}/rechazar")]
@@ -135,7 +149,7 @@ public class OrdenesController : ControllerBase
     public async Task<ActionResult<OrdenDto>> Rechazar(Guid idOrden, [FromBody] RechazarOrdenDto dto, CancellationToken cancellationToken)
     {
         await _ordenes.CambiarEstadoAsync(idOrden, EstadoOrden.Cancelada, _usuario.Id, dto.Motivo.Trim(), cancellationToken);
-        return Ok(await _ordenes.ObtenerAsync(idOrden, _usuario.Id, cancellationToken));
+        return Ok(await LeerYAvisarAsync(EventoPedido.Cancelada, idOrden, cancellationToken));
     }
 
     [HttpPost("api/ordenes/{idOrden:guid}/confirmar-pago")]
@@ -147,6 +161,6 @@ public class OrdenesController : ControllerBase
     public async Task<ActionResult<OrdenDto>> ConfirmarPago(Guid idOrden, [FromBody] ConfirmarPagoDto? dto, CancellationToken cancellationToken)
     {
         await _ordenes.ConfirmarPagoAsync(idOrden, _usuario.Id, dto?.Referencia, cancellationToken);
-        return Ok(await _ordenes.ObtenerAsync(idOrden, _usuario.Id, cancellationToken));
+        return Ok(await LeerYAvisarAsync(EventoPedido.PagoConfirmado, idOrden, cancellationToken));
     }
 }
