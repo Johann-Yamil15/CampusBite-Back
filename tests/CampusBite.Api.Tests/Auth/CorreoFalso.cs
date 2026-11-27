@@ -32,4 +32,18 @@ internal sealed class CorreoFalso : IEnviadorCorreo
         Recuperaciones.Add((correo, nombre, token));
         return Task.CompletedTask;
     }
+
+    // JY-Sprint5 27/11/2026: avisos del seguimiento del pedido. Cola concurrente: el envío real corre en segundo plano.
+    public System.Collections.Concurrent.ConcurrentQueue<(string Correo, string Nombre, AvisoPedido Aviso)> AvisosPedido { get; } = new();
+
+    public Task EnviarEstadoPedidoAsync(string correo, string nombre, AvisoPedido aviso, CancellationToken cancellationToken = default)
+    {
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        AvisosPedido.Enqueue((correo, nombre, aviso));
+        return Task.CompletedTask;
+    }
 }

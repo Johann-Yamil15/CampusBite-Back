@@ -388,6 +388,7 @@ Configuración (SMTP, cualquier proveedor):
 | `Correo__Usuario` / `Correo__Password` | Cuenta y contraseña de aplicación (no la contraseña normal) |
 | `Correo__Remitente` | `no-responder@tu-dominio` (vacío = el usuario) |
 | `Correo__UrlVerificacion` | `https://<front>/verificar-correo` |
+| `Correo__UrlPedidos` | `https://<front>/pedidos` (opcional: botón "Seguir mi pedido" de los avisos del pedido) |
 
 Para probar en local sin mandar correos reales sirve Mailtrap o smtp4dev.
 
@@ -439,6 +440,34 @@ mayúsculas), responde 409 con un mensaje distinto para cada caso y no queda nad
 
 Reglas de registro: nombre de 2 a 80 caracteres, correo válido de máximo 120, contraseña de 8 a 72,
 matrícula de máximo 20 y teléfono de 10 a 15 dígitos (los dos últimos son opcionales).
+
+## Seguimiento del pedido por correo
+
+Cada cambio de estado de un pedido le manda un correo a su dueño (el alumno), aunque no esté en la página. Usa el mismo
+SMTP que la verificación de cuenta (`IEnviadorCorreo`, variables `Correo__*`).
+
+| Qué pasó | Quién lo hace | Correo |
+|---|---|---|
+| Se creó el pedido | El alumno (`POST /api/ordenes`) | "Recibimos tu pedido" (dice si espera la confirmación del pago) |
+| Se confirmó el pago | La cafetería (`POST /api/ordenes/{id}/confirmar-pago`) | "Confirmamos tu pago" |
+| Empezó a prepararse | La cafetería (`PATCH .../estado` con `EnPreparacion`) | "Tu pedido se está preparando" |
+| Está listo | La cafetería (`PATCH .../estado` con `Lista`) | "¡Tu pedido está listo!", con el **código de recogida** |
+| Se entregó | La cafetería (`POST .../entregar`) | "Entregamos tu pedido" |
+| Se canceló | El alumno (`.../cancelar`) o la cafetería (`.../rechazar`) | "Tu pedido fue cancelado" (con el motivo) |
+
+Reglas:
+
+- **Un aviso nunca hace fallar la acción.** El pedido ya cambió de estado: si no hay a quién escribirle o el SMTP falla, solo
+  se registra un warning (con el id de la orden, el evento y el tipo de error; nunca el correo ni el código).
+- **El envío no espera al SMTP.** La API responde de inmediato y el correo sale en segundo plano.
+- **A quién:** `sp_destinatario_orden` devuelve al dueño de la orden. Si su correo no está verificado o la cuenta está inactiva,
+  no se manda nada. Solo la puede llamar el dueño o el personal de esa cafetería (si no, 403).
+- **Preferencia:** si el alumno apagó "avisarme cuando mi pedido esté listo" (`avisoPedidoListo`), no recibe el correo de
+  "listo". Los demás avisos se mandan siempre.
+- **El código de recogida solo va en el aviso de "listo"**, al correo del propio alumno. La cafetería nunca lo ve en la API.
+- **Seguir el pedido:** si defines `Correo__UrlPedidos` (`https://<front>/pedidos`), el correo lleva el botón "Seguir mi
+  pedido" a `<esa URL>/<idOrden>`. Sin ella, el correo sale sin el botón. Debe ser `https://` (solo localhost puede usar http).
+- Las horas se muestran en el centro de México (UTC-6, sin horario de verano).
 
 ## Cifrado en tránsito (TLS)
 Todo lo que sale a internet va cifrado; sin cifrar solo se permite dentro de la red local de desarrollo (`localhost`,

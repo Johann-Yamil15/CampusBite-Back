@@ -5,6 +5,8 @@ using System.Text;
 using CampusBite.Api.Tests.Common;
 using CampusBite.Api.Tests.Seguridad;
 using CampusBite.Application.Common.Correo;
+using CampusBite.Domain.Ordenes;
+using CampusBite.Domain.Cafeterias;
 using CampusBite.Domain.Common.Exceptions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -263,6 +265,192 @@ public class SmtpEnviadorCorreoTests : IClassFixture<ApiDePrueba>
         Assert.DoesNotContain("ana@uttt.edu.mx", error.Mensaje);
         Assert.DoesNotContain(Token, error.Mensaje);
         Assert.Contains("AuthenticationException", error.Mensaje);
+    }
+
+    // ---- Seguimiento del pedido (JY-Sprint5 27/11/2026) --------------------------------------------------------------
+    private static AvisoPedido Pedido(EventoPedido evento, string cafeteria = "Cafetería Central", string? codigo = null,
+        string? motivo = null, EstadoPago pago = EstadoPago.Pendiente, MetodoPago metodo = MetodoPago.Transferencia) => new(
+        evento, Guid.Parse("00000000-0000-0000-0000-0000000000f1"), cafeteria, "Barra principal",
+        new DateTimeOffset(2026, 11, 28, 19, 0, 0, TimeSpan.Zero), 110m, metodo, pago,
+        [new LineaAvisoPedido("Chilaquiles verdes", 2, 55m)], codigo, motivo);
+
+    private async Task<MimeMessage> EnviarPedidoAsync(AvisoPedido aviso, Dictionary<string, string?>? cambios = null)
+    {
+        await using var smtp = new ServidorSmtpDePrueba();
+        var (enviador, _) = Crear(smtp.Puerto, cambios);
+        await enviador.EnviarEstadoPedidoAsync("ana@uttt.edu.mx", "Ana López", aviso);
+        return Leer(Assert.Single(smtp.Mensajes));
+    }
+
+    [Theory]
+    [InlineData(EventoPedido.PagoConfirmado, "Confirmamos tu pago", "confirmó tu pago")]
+    [InlineData(EventoPedido.EnPreparacion, "Tu pedido se está preparando", "ya está preparando tu pedido")]
+    [InlineData(EventoPedido.Entregada, "Entregamos tu pedido", "¡Buen provecho!")]
+    public async Task Cada_aviso_del_pedido_sale_con_su_asunto_y_su_texto(EventoPedido evento, string asunto, string texto)
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(evento));
+
+        Assert.Equal(asunto, mensaje.Subject);
+        Assert.Contains(texto, mensaje.TextBody);
+        Assert.Contains("Hola, Ana López.", mensaje.TextBody);
+        var para = Assert.Single(mensaje.To.Mailboxes);
+        Assert.Equal("ana@uttt.edu.mx", para.Address);
+    }
+
+    [Fact]
+    public async Task El_pedido_recien_creado_con_pago_pendiente_avisa_que_espera_la_confirmacion_del_pago()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.Creada));
+
+        Assert.Equal("Recibimos tu pedido en Cafetería Central", mensaje.Subject);
+        Assert.Contains("está esperando confirmar tu pago por transferencia", mensaje.TextBody);
+    }
+
+    [Fact]
+    public async Task El_pedido_recien_creado_sin_pago_pendiente_avisa_que_quedo_confirmado()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.Creada, pago: EstadoPago.Pagado));
+
+        Assert.Contains("Tu pedido quedó confirmado en Cafetería Central", mensaje.TextBody);
+    }
+
+    [Theory]
+    [InlineData(MetodoPago.Efectivo, "por efectivo")]
+    [InlineData(MetodoPago.Tarjeta, "por tarjeta")]
+    [InlineData(MetodoPago.Transferencia, "por transferencia")]
+    public async Task El_aviso_de_pago_pendiente_nombra_el_metodo_de_pago_elegido(MetodoPago metodo, string esperado)
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.Creada, metodo: metodo));
+
+        Assert.Contains(esperado, mensaje.TextBody);
+    }
+
+    [Fact]
+    public async Task Un_metodo_de_pago_desconocido_no_rompe_el_aviso()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.Creada, metodo: (MetodoPago)99));
+
+        Assert.Contains("por el método elegido", mensaje.TextBody);
+    }
+
+    [Fact]
+    public async Task El_aviso_de_pedido_listo_lleva_el_punto_de_entrega_y_el_codigo_de_recogida()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.Lista, codigo: "123456"));
+
+        Assert.Equal("¡Tu pedido está listo!", mensaje.Subject);
+        Assert.Contains("Pasa a recogerlo en Barra principal", mensaje.TextBody);
+        Assert.Contains("Tu código de recogida: 123456", mensaje.TextBody);
+        Assert.Contains("123456", mensaje.HtmlBody);
+    }
+
+    [Fact]
+    public async Task Sin_codigo_en_el_aviso_el_correo_no_lo_menciona()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.EnPreparacion));
+
+        Assert.DoesNotContain("código de recogida", mensaje.TextBody);
+        Assert.DoesNotContain("código de recogida", mensaje.HtmlBody);
+    }
+
+    [Fact]
+    public async Task El_aviso_de_cancelacion_lleva_el_motivo_cuando_existe_y_funciona_sin_el()
+    {
+        var conMotivo = await EnviarPedidoAsync(Pedido(EventoPedido.Cancelada, motivo: "Se acabó el producto"));
+        var sinMotivo = await EnviarPedidoAsync(Pedido(EventoPedido.Cancelada, motivo: " "));
+
+        Assert.Equal("Tu pedido fue cancelado", conMotivo.Subject);
+        Assert.Contains("Motivo: Se acabó el producto", conMotivo.TextBody);
+        Assert.DoesNotContain("Motivo:", sinMotivo.TextBody);
+        Assert.Contains("fue cancelado.", sinMotivo.TextBody);
+    }
+
+    [Fact]
+    public async Task El_resumen_muestra_las_lineas_el_total_y_la_hora_de_recogida_del_centro_de_Mexico()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.EnPreparacion));
+
+        Assert.Contains("2 x Chilaquiles verdes - $110.00", mensaje.TextBody);
+        Assert.Contains("Total: $110.00", mensaje.TextBody);
+        Assert.Contains("Recogida: 28/11/2026 13:00 en Barra principal", mensaje.TextBody);      // 19:00 UTC = 13:00 en UTC-6
+        Assert.Contains("28/11/2026 13:00", mensaje.HtmlBody);
+    }
+
+    [Fact]
+    public async Task Los_textos_que_vienen_de_la_base_se_escapan_en_el_HTML_y_el_asunto_no_lleva_saltos_de_linea()
+    {
+        var aviso = Pedido(EventoPedido.Creada, cafeteria: "Café <b>X</b>\r\nBcc: otro@x.com");
+
+        var mensaje = await EnviarPedidoAsync(aviso);
+
+        Assert.DoesNotContain("<b>X</b>", mensaje.HtmlBody);
+        Assert.Contains("&lt;b&gt;X&lt;/b&gt;", mensaje.HtmlBody);
+        Assert.DoesNotContain('\n', mensaje.Subject!);
+        Assert.DoesNotContain('\r', mensaje.Subject!);
+        Assert.Null(mensaje.Headers["Bcc"]);                                    // el salto de línea no abre otro encabezado
+    }
+
+    [Fact]
+    public async Task Con_UrlPedidos_el_correo_trae_el_enlace_para_seguir_el_pedido()
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.EnPreparacion),
+            new() { ["Correo:UrlPedidos"] = "http://localhost:4200/pedidos/" });
+
+        Assert.Contains("http://localhost:4200/pedidos/00000000-0000-0000-0000-0000000000f1", mensaje.TextBody);
+        Assert.Contains("Seguir mi pedido", mensaje.HtmlBody);
+    }
+
+    [Theory]
+    [InlineData("")]                                                     // sin configurar
+    [InlineData("http://campusbite-front.azurewebsites.net/pedidos")]    // http fuera de localhost: no se manda
+    public async Task Sin_una_UrlPedidos_segura_el_correo_sale_sin_enlace_y_no_falla(string url)
+    {
+        var mensaje = await EnviarPedidoAsync(Pedido(EventoPedido.EnPreparacion), new() { ["Correo:UrlPedidos"] = url });
+
+        Assert.DoesNotContain("Sigue tu pedido", mensaje.TextBody);
+        Assert.DoesNotContain("Seguir mi pedido", mensaje.HtmlBody);
+    }
+
+    [Fact]
+    public async Task Sin_servidor_SMTP_configurado_el_aviso_da_503_y_lo_registra()
+    {
+        await using var smtp = new ServidorSmtpDePrueba();
+        var (enviador, log) = Crear(smtp.Puerto, new() { ["Correo:Host"] = "" });
+
+        await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
+            enviador.EnviarEstadoPedidoAsync("ana@uttt.edu.mx", "Ana", Pedido(EventoPedido.Lista)));
+
+        Assert.Equal(0, smtp.Conexiones);
+        Assert.Contains(log.Registros, r => r.Nivel == LogLevel.Error && r.Categoria.EndsWith("SmtpEnviadorCorreo"));
+    }
+
+    [Fact]
+    public async Task Si_el_SMTP_rechaza_el_aviso_da_503_y_el_log_no_lleva_el_correo()
+    {
+        await using var smtp = new ServidorSmtpDePrueba(ServidorSmtpDePrueba.Modo.RechazaAutenticacion);
+        var (enviador, log) = Crear(smtp.Puerto);
+
+        await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
+            enviador.EnviarEstadoPedidoAsync("ana@uttt.edu.mx", "Ana", Pedido(EventoPedido.Lista, codigo: "123456")));
+
+        var error = Assert.Single(log.Registros, r => r.Nivel == LogLevel.Error && r.Categoria.EndsWith("SmtpEnviadorCorreo"));
+        Assert.Null(error.Excepcion);
+        Assert.DoesNotContain("ana@uttt.edu.mx", error.Mensaje);
+        Assert.DoesNotContain("123456", error.Mensaje);
+        Assert.Contains("estado del pedido", error.Mensaje);
+    }
+
+    [Fact]
+    public async Task Un_evento_desconocido_es_un_defecto_y_no_se_manda_ningun_correo()
+    {
+        await using var smtp = new ServidorSmtpDePrueba();
+        var (enviador, _) = Crear(smtp.Puerto);
+
+        var error = Record.Exception(() => { _ = enviador.EnviarEstadoPedidoAsync("ana@uttt.edu.mx", "Ana", Pedido((EventoPedido)99)); });
+
+        Assert.IsType<ArgumentOutOfRangeException>(error);
+
+        Assert.Equal(0, smtp.Conexiones);
     }
 
     // ---- Defecto D-1 (documentado, sin corregir: requiere autorización) -------------------------------------------
