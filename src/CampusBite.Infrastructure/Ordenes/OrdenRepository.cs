@@ -66,6 +66,16 @@ public class OrdenRepository : IOrdenRepository
             fila => fila.LeerJson<List<OrdenDto>>(0) ?? [],
             cancellationToken);
 
+    // JY-Sprint5 27/11/2026: sp_destinatario_orden devuelve todo NULL si la orden no existe o no hay a quién escribirle
+    public Task<DestinatarioOrden?> DestinatarioAsync(Guid idOrden, Guid idActor, CancellationToken cancellationToken = default) =>
+        _context.EjecutarAsync(
+            "CALL sp_destinatario_orden(@orden, @actor, NULL, NULL, NULL, NULL, NULL)",
+            [Id("orden", idOrden), Id("actor", idActor)],
+            fila => fila.IsDBNull(0)
+                ? null
+                : new DestinatarioOrden(fila.GetGuid(0), fila.GetString(1), fila.GetString(2), fila.GetBoolean(3), fila.GetString(4)),
+            cancellationToken);
+
     public Task CambiarEstadoAsync(Guid idOrden, EstadoOrden estado, Guid idActor, string? motivo, CancellationToken cancellationToken = default) =>
         _context.EjecutarAsync(
             "CALL sp_cambiar_estado_orden(@orden, @estado::estado_orden, @actor, @motivo)",
